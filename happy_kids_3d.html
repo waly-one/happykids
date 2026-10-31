@@ -567,6 +567,7 @@ function initAudio(){
   scheduleLoop();
   scheduleMotif();
   scheduleDistantThud();
+  loadSounds();
 }
 
 // far-off metallic groans / distant thuds — like something moving in another room
@@ -761,8 +762,91 @@ function steveGrowl(){
 function hasCzechVoice(){
   try{ return window.speechSynthesis.getVoices().some(v=> /^cs/i.test(v.lang)); }catch(e){ return false; }
 }
+/* ---- recorded sounds (sounds/*.mp3) ----
+   Each file is optional: whatever fails to load (missing file, or opened as a
+   local file:// page) falls back to the synthesized sound. */
+const SOUND_GROUPS = {
+  giggle: ['giggle1','giggle2','giggle3','giggle4','kids_hihi'],
+  whisper: ['kids_kdejsi','kids_vidime'],
+  step: ['step1','step2','step3'],
+  growl: ['growl'], shriek: ['shriek']
+};
+// spoken lines → file
+const VOICE_LINES = {
+  'Vidím tě.': 'steve_vidim', 'Našel jsem tě.': 'steve_nasel', 'Sbohem.': 'steve_sbohem',
+  'Dole je to horší.': 'steve_dole', 'Vidíme tě…': 'kids_vidime', 'Pojď si s námi hrát.': 'kids_pojd'
+};
+// longest useful length per sound (s): generated files carry silence and extra hits
+const SOUND_MAXLEN = {step:0.55, giggle:3.2, whisper:2.5, growl:2.8, shriek:1.6};
+const soundNames = [...new Set(Object.values(SOUND_GROUPS).flat().concat(Object.values(VOICE_LINES)))];
+const soundData = {}, sounds = {};
+for(const n of soundNames){
+  // download right away; decoding has to wait for the AudioContext (first tap/click)
+  soundData[n] = fetch('sounds/'+n+'.mp3').then(r=> r.ok ? r.arrayBuffer() : null).catch(()=> null);
+}
+function groupOf(name){
+  for(const g in SOUND_GROUPS) if(SOUND_GROUPS[g].includes(name)) return g;
+  return null;
+}
+// cut leading/trailing silence and cap the length, with a short fade-out
+function trimBuffer(buf, maxSec){
+  const th = 0.02, ch = buf.numberOfChannels, sr = buf.sampleRate;
+  let first = buf.length, last = 0;
+  for(let c=0;c<ch;c++){
+    const d = buf.getChannelData(c);
+    for(let i=0;i<d.length;i++) if(Math.abs(d[i]) > th){ first = Math.min(first, i); break; }
+    for(let i=d.length-1;i>=0;i--) if(Math.abs(d[i]) > th){ last = Math.max(last, i); break; }
+  }
+  if(first >= last) return buf;
+  const start = Math.max(0, first - Math.floor(sr*0.005));
+  const end = Math.min(last + Math.floor(sr*0.05), start + Math.floor(sr*maxSec), buf.length);
+  const out = actx.createBuffer(ch, end-start, sr);
+  const fade = Math.min(Math.floor(sr*0.04), end-start);
+  for(let c=0;c<ch;c++){
+    const src = buf.getChannelData(c), dst = out.getChannelData(c);
+    for(let i=0;i<end-start;i++) dst[i] = src[start+i];
+    for(let i=0;i<fade;i++) dst[end-start-1-i] *= i/fade;
+  }
+  return out;
+}
+function decodeMp3(ab){
+  // callback form keeps older iOS Safari happy
+  return new Promise((res, rej)=> actx.decodeAudioData(ab, res, rej));
+}
+function loadSounds(){
+  for(const n of soundNames){
+    soundData[n].then(ab=> ab && decodeMp3(ab)).then(buf=>{
+      if(!buf) return;
+      sounds[n] = trimBuffer(buf, SOUND_MAXLEN[groupOf(n)] || 4);
+    }).catch(()=>{});
+  }
+}
+function pickSound(group){
+  const list = SOUND_GROUPS[group].filter(n=> sounds[n]);
+  return list.length ? sounds[list[Math.floor(Math.random()*list.length)]] : null;
+}
+// play a buffer into `dest` (a spatialOut chain, or the master bus); returns its length in seconds
+function playBuffer(buf, dest, vol, rate, wet){
+  const src = actx.createBufferSource();
+  src.buffer = buf; src.playbackRate.value = rate || 1;
+  const g = actx.createGain(); g.gain.value = vol;
+  src.connect(g); g.connect(dest || masterGain);
+  if(wet){ const w = actx.createGain(); w.gain.value = wet; g.connect(w); w.connect(reverb); }
+  src.start();
+  return buf.duration / (rate || 1);
+}
+
 function speak(text){
-  steveGrowl();
+  const line = actx && sounds[VOICE_LINES[text]];
+  if(line){
+    try{ window.speechSynthesis && window.speechSynthesis.cancel(); }catch(e){}
+    playBuffer(line, masterGain, 1.0, 1, 0.35);
+    return;
+  }
+  if(VOICE_LINES[text] && VOICE_LINES[text].startsWith('kids_')){
+    const w = actx && pickSound('whisper');
+    if(w){ playBuffer(w, masterGain, 0.9, 1, 0.35); return; }
+  } else steveGrowl();
   // without a Czech voice the line would be read with English pronunciation — the subtitle and growl carry it instead
   if(!('speechSynthesis' in window) || !hasCzechVoice()) return;
   try{
@@ -1300,6 +1384,11 @@ function steveFootstep(){
   const s = spatialize(steve.x, steve.z, CELL*7);
   if(s.vol <= 0) return;
   const out = spatialOut(s.pan, !hasLineOfSight(steve, player));
+  const rec = pickSound('step');
+  if(rec){
+    playBuffer(rec, out, s.vol*s.vol*(steve.hunting ? 1.0 : 0.7), 0.92 + Math.random()*0.12);
+    return;
+  }
   const t = actx.currentTime;
   const vol = s.vol*s.vol*(steve.hunting ? 0.55 : 0.35);
   const o = actx.createOscillator(); o.type = 'sine';
@@ -1325,6 +1414,9 @@ function kidGiggle(k){
   const s = spatialize(k.x, k.z, CELL*6);
   if(s.vol <= 0) return;
   const out = spatialOut(s.pan, s.d > CELL*1.2 && !hasLineOfSight(k, player));
+  // close by, it sometimes whispers instead of giggling
+  const rec = (s.d < CELL*2 && Math.random() < 0.35 && pickSound('whisper')) || pickSound('giggle');
+  if(rec) return playBuffer(rec, out, s.vol*s.vol*0.9, 0.97 + Math.random()*0.12, 0.25);
   const vol = s.vol*s.vol*0.16;
   const t0 = actx.currentTime;
   const base = 820 + Math.random()*260;
@@ -1858,13 +1950,15 @@ function kidScare(k){
   setHeartTarget(150);
   flashStatic();
   shriek();
-  showSubtitle('Pojď si s námi hrát…');
+  setTimeout(()=>{ if(!gameEnded) showSubtitle('Vidíme tě…'); }, 550);
   const buzz = document.getElementById('buzz');
   buzz.style.opacity = 0.85;
   setTimeout(()=>{ buzz.style.opacity = 0; }, 220);
 }
 function shriek(){
   if(!actx) return;
+  const rec = pickSound('shriek');
+  if(rec){ playBuffer(rec, masterGain, 0.9, 1, 0.4); return; }
   const t = actx.currentTime;
   [1250, 1330, 1870].forEach(f=>{
     const o = actx.createOscillator(); o.type = 'sawtooth';
@@ -2007,6 +2101,16 @@ function step(dt,t){
     steve.stepTimer -= dt;
     if(steve.stepTimer <= 0){ steve.stepTimer = steve.hunting ? 0.3 : 0.52; steveFootstep(); }
   }
+  // now and then Steve growls somewhere nearby, even before he has seen you
+  steve.growlT = (steve.growlT === undefined ? 4 : steve.growlT) - dt;
+  if(steve.growlT <= 0){
+    steve.growlT = 9 + Math.random()*9;
+    const rec = actx && dist < CELL*4.5 && pickSound('growl');
+    if(rec){
+      const s = spatialize(steve.x, steve.z, CELL*4.5);
+      playBuffer(rec, spatialOut(s.pan, !hasLineOfSight(steve, player)), 0.25 + s.vol*0.6, 0.95, 0.3);
+    }
+  }
   // kids sneaking up out of view: giggle more often the closer they get, and
   // light up a red glow on the screen edge facing the nearest one
   const fwdX = -Math.sin(yaw), fwdZ = -Math.cos(yaw), rgtX = Math.cos(yaw), rgtZ = -Math.sin(yaw);
@@ -2016,7 +2120,11 @@ function step(dt,t){
     const kdx = k.x-player.x, kdz = k.z-player.z, kd = Math.hypot(kdx, kdz);
     if(k.giggleT === undefined) k.giggleT = Math.random()*0.8;
     k.giggleT -= dt;
-    if(k.giggleT <= 0){ k.giggleT = (kd < CELL*2 ? 0.6 : 1.5) + Math.random()*1.2; kidGiggle(k); }
+    if(k.giggleT <= 0){
+      k.giggleT = (kd < CELL*2 ? 0.6 : 1.5) + Math.random()*1.2;
+      // don't stack a new giggle on top of a recording that is still playing
+      k.giggleT = Math.max(k.giggleT, (kidGiggle(k) || 0) + 0.4);
+    }
     const ang = Math.atan2(kdx*rgtX + kdz*rgtZ, kdx*fwdX + kdz*fwdZ) * 180/Math.PI;
     if(kd < warnD && Math.abs(ang) > 50){ warnKid = k; warnD = kd; warnAngle = ang; }
   }
