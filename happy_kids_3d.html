@@ -98,6 +98,15 @@
     font-size:15px;letter-spacing:3px;text-transform:uppercase;
     color:#8a7d55;text-shadow:0 0 6px rgba(0,0,0,.9);
   }
+  /* direction of a kid sneaking up out of view: 0deg = ahead (top edge), 180deg = behind (bottom edge) */
+  #kidWarn{position:absolute;left:50%;top:50%;width:0;height:0;opacity:0;transition:opacity .2s;}
+  #kidWarn .arc{
+    position:absolute;left:-90px;top:calc(-1 * min(44vh, 44vw));width:180px;height:46px;margin-top:-23px;
+    border-radius:50%;
+    background:radial-gradient(ellipse at center, rgba(255,40,60,.85) 0%, rgba(255,40,60,.35) 40%, rgba(255,40,60,0) 72%);
+    animation:kidPulse .5s ease-in-out infinite alternate;
+  }
+  @keyframes kidPulse{from{transform:scale(.85);}to{transform:scale(1.1);}}
   #hideState.safe{color:var(--yellow-bright);text-shadow:0 0 8px rgba(61,242,255,.7);}
 
   #audioBtn{
@@ -233,6 +242,7 @@
   <div id="ecgWrap"><div class="lbl">TEP</div><canvas id="ecg" width="140" height="34"></canvas><div id="bpm">72 bpm</div></div>
   <div id="crosshair"></div>
   <div id="hideState" class="hidden"></div>
+  <div id="kidWarn"><div class="arc"></div></div>
   <canvas id="minimap" width="130" height="130"></canvas>
   <div id="lockhint" class="hidden">Rozhlížení: pohybuj myší k okraji obrazovky (na mobilu táhni prstem)</div>
   <div id="audioBtn">🔊 Zvuk</div>
@@ -1292,12 +1302,13 @@ function steveFootstep(){
   n.connect(bp); bp.connect(ng); ng.connect(out);
   n.start(t);
 }
+const KID_WARN_DIST = CELL*3.5;
 function kidGiggle(k){
   if(!actx || !player) return;
-  const s = spatialize(k.x, k.z, CELL*5);
+  const s = spatialize(k.x, k.z, CELL*6);
   if(s.vol <= 0) return;
   const out = spatialOut(s.pan, s.d > CELL*1.2 && !hasLineOfSight(k, player));
-  const vol = s.vol*s.vol*0.09;
+  const vol = s.vol*s.vol*0.16;
   const t0 = actx.currentTime;
   const base = 820 + Math.random()*260;
   const n = 3 + Math.floor(Math.random()*3);
@@ -1978,12 +1989,24 @@ function step(dt,t){
     steve.stepTimer -= dt;
     if(steve.stepTimer <= 0){ steve.stepTimer = steve.hunting ? 0.3 : 0.52; steveFootstep(); }
   }
+  // kids sneaking up out of view: giggle more often the closer they get, and
+  // light up a red glow on the screen edge facing the nearest one
+  const fwdX = -Math.sin(yaw), fwdZ = -Math.cos(yaw), rgtX = Math.cos(yaw), rgtZ = -Math.sin(yaw);
+  let warnKid = null, warnD = KID_WARN_DIST, warnAngle = 0;
   for(const k of kids){
     if(!k.moving) continue;
+    const kdx = k.x-player.x, kdz = k.z-player.z, kd = Math.hypot(kdx, kdz);
     if(k.giggleT === undefined) k.giggleT = Math.random()*0.8;
     k.giggleT -= dt;
-    if(k.giggleT <= 0){ k.giggleT = 1.6 + Math.random()*2.2; kidGiggle(k); }
+    if(k.giggleT <= 0){ k.giggleT = (kd < CELL*2 ? 0.6 : 1.5) + Math.random()*1.2; kidGiggle(k); }
+    const ang = Math.atan2(kdx*rgtX + kdz*rgtZ, kdx*fwdX + kdz*fwdZ) * 180/Math.PI;
+    if(kd < warnD && Math.abs(ang) > 50){ warnKid = k; warnD = kd; warnAngle = ang; }
   }
+  const kidWarn = document.getElementById('kidWarn');
+  if(warnKid){
+    kidWarn.style.transform = 'rotate('+warnAngle.toFixed(1)+'deg)';
+    kidWarn.style.opacity = (0.35 + 0.65*(1 - warnD/KID_WARN_DIST)).toFixed(2);
+  } else kidWarn.style.opacity = 0;
   const targetBPM = Math.max(66, Math.min(185, 190 - dist*7));
   setHeartTarget(steve.hunting ? Math.max(targetBPM,145) : targetBPM);
 
