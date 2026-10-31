@@ -1184,12 +1184,23 @@ const battBodyMat = new THREE.MeshBasicMaterial({color:0x3df2ff});
 const battCapMat = new THREE.MeshBasicMaterial({color:0xe8dcc0});
 const battHaloMat = new THREE.MeshBasicMaterial({color:0x3df2ff, transparent:true, opacity:0.35, side:THREE.DoubleSide});
 const tokenGeo = {
-  coin: new THREE.CylinderGeometry(0.17,0.17,0.035,20),
-  rim:  new THREE.TorusGeometry(0.17,0.022,6,24)
+  coin: new THREE.CylinderGeometry(0.27,0.27,0.05,24),
+  rim:  new THREE.TorusGeometry(0.27,0.03,6,28),
+  beam: new THREE.CylinderGeometry(0.24,0.24,WALL_H,16,1,true),
+  halo: new THREE.RingGeometry(0.45,0.7,28)
 };
-const tokenMat = new THREE.MeshBasicMaterial({color:0xffd23a});
-const tokenRimMat = new THREE.MeshBasicMaterial({color:0xff2bd6});
-const tokenHaloMat = new THREE.MeshBasicMaterial({color:0xffd23a, transparent:true, opacity:0.35, side:THREE.DoubleSide});
+const tokenMat = new THREE.MeshBasicMaterial({color:0xffd23a, fog:false});
+const tokenRimMat = new THREE.MeshBasicMaterial({color:0xff2bd6, fog:false});
+const tokenHaloMat = new THREE.MeshBasicMaterial({color:0xffd23a, transparent:true, opacity:0.5, side:THREE.DoubleSide, fog:false});
+// a soft golden light column, visible down a dark corridor (ignores fog on purpose)
+const tokenBeamMat = new THREE.MeshBasicMaterial({color:0xffc83a, transparent:true, opacity:0.12, side:THREE.DoubleSide,
+  depthWrite:false, blending:THREE.AdditiveBlending, fog:false});
+// fixed set of lights for tokens (count never changes, so no shader recompiles)
+const tokenLights = Array.from({length:TOKEN_COUNT}, ()=>{
+  const l = new THREE.PointLight(0xffc83a, 0, 6, 2);
+  scene.add(l);
+  return l;
+});
 let batteries = [], tokens = [], tokensFound = 0, tokensNeeded = 0;
 
 // random cells far enough from the start and from each other; tokens prefer
@@ -1213,23 +1224,24 @@ function pickItemCells(count, minFromStart, spacing, avoid, deadEndsOnly){
 function makePickup(r, c, kind){
   const cen = cellCenter(r,c);
   const g = new THREE.Group();
-  const spin = new THREE.Group(); spin.position.y = 0.55; g.add(spin);
-  let haloMat;
+  const baseY = kind === 'token' ? 1.1 : 0.55;
+  const spin = new THREE.Group(); spin.position.y = baseY; g.add(spin);
+  let halo;
   if(kind === 'token'){
     const coin = new THREE.Mesh(tokenGeo.coin, tokenMat); coin.rotation.x = Math.PI/2; spin.add(coin);
     spin.add(new THREE.Mesh(tokenGeo.rim, tokenRimMat));
-    haloMat = tokenHaloMat;
+    const beam = new THREE.Mesh(tokenGeo.beam, tokenBeamMat); beam.position.y = WALL_H/2; g.add(beam);
+    halo = new THREE.Mesh(tokenGeo.halo, tokenHaloMat);
   } else {
     spin.add(new THREE.Mesh(battGeo.body, battBodyMat));
     const cap = new THREE.Mesh(battGeo.cap, battCapMat); cap.position.y = 0.18; spin.add(cap);
     spin.rotation.z = 0.35;
-    haloMat = battHaloMat;
+    halo = new THREE.Mesh(battGeo.halo, battHaloMat);
   }
-  const halo = new THREE.Mesh(battGeo.halo, haloMat);
   halo.rotation.x = -Math.PI/2; halo.position.y = 0.02; g.add(halo);
   g.position.set(cen.x, 0, cen.z);
   scene.add(g);
-  return {group:g, spin, x:cen.x, z:cen.z, taken:false, phase:rng()*6.28};
+  return {group:g, spin, baseY, kind, r, c, x:cen.x, z:cen.z, taken:false, seen:false, phase:rng()*6.28};
 }
 function buildPickups(){
   for(const p of batteries.concat(tokens)) scene.remove(p.group);
@@ -1244,6 +1256,11 @@ function buildPickups(){
   batteries = pickItemCells(levelCfg.batteries, 5, 6, avoid, false).map(([r,c])=> makePickup(r,c,'battery'));
   tokensFound = 0;
   tokensNeeded = tokens.length;
+  tokenLights.forEach((l,i)=>{
+    const tk = tokens[i];
+    l.intensity = tk ? 1.4 : 0;
+    if(tk) l.position.set(tk.x, 1.3, tk.z);
+  });
 }
 function pickupChime(freqs){
   if(!actx) return;
@@ -1946,6 +1963,7 @@ function step(dt,t){
   for(const tk of tokens){
     if(tk.taken || Math.hypot(player.x-tk.x, player.z-tk.z) > 0.8) continue;
     tk.taken = true; tk.group.visible = false;
+    tokenLights[tokens.indexOf(tk)].intensity = 0;
     tokensFound++;
     if(tokensFound >= tokensNeeded){
       setExitLocked(false);
@@ -2027,6 +2045,14 @@ function step(dt,t){
 
   explored.add(pr*COLS+pc);
   for(const [nr,nc] of neighborsOf(pr,pc)) explored.add(nr*COLS+nc);
+  // pickups you've spotted (in a straight corridor, or on explored ground) get drawn on the minimap
+  for(const p of tokens.concat(batteries)){
+    if(p.seen || p.taken) continue;
+    const near = Math.hypot(player.x-p.x, player.z-p.z) < CELL*5 && hasLineOfSight(player, p);
+    if(!near && !explored.has(p.r*COLS+p.c)) continue;
+    p.seen = true;
+    if(p.kind === 'token') showSubtitle('Žeton zakreslen do mapy', true);
+  }
 
   elapsed += dt;
   runTime += dt;
@@ -2145,6 +2171,16 @@ function drawMinimap(){
   mctx.stroke();
   mctx.fillStyle = exitLocked ? '#ff2b4a' : '#5adf5a';
   mctx.fillRect(exitCell[1]*CELL*sx-2, exitCell[0]*CELL*sy-2, 4,4);
+  for(const b of batteries){
+    if(!b.seen || b.taken) continue;
+    mctx.fillStyle = '#3df2ff';
+    mctx.fillRect(b.x*sx-1.5, b.z*sy-1.5, 3, 3);
+  }
+  for(const tk of tokens){
+    if(!tk.seen || tk.taken) continue;
+    mctx.fillStyle = '#ffd23a'; mctx.strokeStyle = '#ff2bd6'; mctx.lineWidth = 1;
+    mctx.beginPath(); mctx.arc(tk.x*sx, tk.z*sy, 3.5, 0, Math.PI*2); mctx.fill(); mctx.stroke();
+  }
   mctx.fillStyle = '#e8dcc8';
   mctx.beginPath(); mctx.arc(player.x*sx, player.z*sy, 3,0,Math.PI*2); mctx.fill();
   mctx.strokeStyle='#e8dcc8'; mctx.lineWidth=1.5;
@@ -2176,7 +2212,7 @@ function render(){
   for(const b of batteries.concat(tokens)){
     if(b.taken) continue;
     b.spin.rotation.y = t*1.6 + b.phase;
-    b.spin.position.y = 0.55 + Math.sin(t*2.2 + b.phase)*0.06;
+    b.spin.position.y = b.baseY + Math.sin(t*2.2 + b.phase)*0.06;
   }
 
   assignFixtureLights(t);
