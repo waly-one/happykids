@@ -2,7 +2,7 @@
 // the CDN) is cached, so it starts even without a connection.
 // The game page itself is fetched network-first, so updates show up right away.
 // bump this whenever a cached file other than the page changes (sounds, icons…)
-const CACHE = 'happy-kids-v3';
+const CACHE = 'happy-kids-v4';
 const CORE = ['./happy_kids_3d.html', './manifest.webmanifest', './icon-180.png', './icon-512.png',
   'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'];
 
@@ -16,6 +16,8 @@ self.addEventListener('activate', e=>{
 });
 self.addEventListener('fetch', e=>{
   if(e.request.method !== 'GET') return;
+  // streamed music uses partial (Range) requests, which the cache can't store — let those go straight to the network
+  if(e.request.headers.has('range')) return;
   const isPage = e.request.mode === 'navigate';
   if(isPage){
     e.respondWith(fetch(e.request)
@@ -24,7 +26,7 @@ self.addEventListener('fetch', e=>{
     return;
   }
   e.respondWith(caches.match(e.request).then(hit=> hit || fetch(e.request).then(res=>{
-    if(res.ok || res.type === 'opaque'){ const copy = res.clone(); caches.open(CACHE).then(c=> c.put(e.request, copy)); }
+    if((res.ok && res.status !== 206) || res.type === 'opaque'){ const copy = res.clone(); caches.open(CACHE).then(c=> c.put(e.request, copy)).catch(()=>{}); }
     return res;
   })));
 });

@@ -606,6 +606,7 @@ function initAudio(){
   scheduleMotif();
   scheduleDistantThud();
   loadSounds();
+  initMusic();
 }
 
 // far-off metallic groans / distant thuds — like something moving in another room
@@ -633,7 +634,7 @@ const loopSeq = [220.00, 246.94, 233.08, 196.00, 174.61, 196.00, 220.00, 261.63]
 let loopIndex = 0, loopTimer = null;
 function scheduleLoop(){
   if(!actx) return;
-  playLoopNote(loopSeq[loopIndex % loopSeq.length]);
+  if(!recordedMusic) playLoopNote(loopSeq[loopIndex % loopSeq.length]);
   loopIndex++;
   const interval = 1.9 + Math.random()*0.5;
   loopTimer = setTimeout(scheduleLoop, interval*1000);
@@ -662,7 +663,7 @@ function scheduleNote(){
   noteTimer = setTimeout(()=>{ playNote(); scheduleNote(); }, delay*1000);
 }
 function playNote(){
-  if(!actx) return;
+  if(!actx || recordedMusic) return;
   const t = actx.currentTime;
   let freq = darkScale[Math.floor(Math.random()*darkScale.length)];
   if(Math.random()<0.35) freq *= 0.5;
@@ -703,7 +704,7 @@ function scheduleMotif(baseDelay){
   motifTimer = setTimeout(()=>{ playMotif(); scheduleMotif(); }, delay*1000);
 }
 function playMotif(intensity){
-  if(!actx) return;
+  if(!actx || recordedMusic) return;
   intensity = intensity==null ? 0.55 : intensity;
   const dist = actx.createWaveShaper();
   dist.curve = makeDistortionCurve(2 + intensity*3);
@@ -736,11 +737,92 @@ function setMusicTension(amount){
   if(!actx) return;
   amount = Math.max(0, Math.min(1, amount));
   const t = actx.currentTime;
-  musicGain.gain.setTargetAtTime(0.075+amount*0.09, t, 0.6);
+  // with recorded music the synthesized drone bed steps aside
+  musicGain.gain.setTargetAtTime(recordedMusic ? 0 : 0.075+amount*0.09, t, 0.6);
   musicFilter.frequency.setTargetAtTime(400+amount*1100, t, 0.4);
   droneOscs.forEach((d,i)=>{
     d.osc.detune.setTargetAtTime(amount*18*(i%2===0?1:-1), t, 0.3);
   });
+}
+
+/* ---- recorded music (sounds/music_*.mp3) ----
+   Tracks are streamed through <audio> elements (a 4-minute track decoded into
+   memory would be ~80 MB — too much for a phone) and faded via Web Audio gains,
+   since iOS ignores audio.volume. If the files can't load, the synthesized
+   music above keeps playing. */
+const MUSIC_TRACKS = {menu:true, explore:true, chase:true, deep:true, escape:false, gameover:false, secret:false}; // name → loops
+const music = {};
+// recordedMusic: a recorded track is playing right now (the synthesized music stays silent meanwhile)
+let recordedMusic = false, musicBus = null, currentTrack = null;
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function initMusic(){
+  musicBus = actx.createGain(); musicBus.gain.value = 0.6;
+  musicBus.connect(masterGain);
+  for(const name in MUSIC_TRACKS){
+    const el = new Audio();
+    el.crossOrigin = 'anonymous';
+    el.loop = MUSIC_TRACKS[name];
+    // only the menu theme loads right away; the rest start loading when first needed
+    el.preload = name === 'menu' ? 'auto' : 'none';
+    el.src = 'sounds/music_'+name+'.mp3';
+    let src;
+    try{ src = actx.createMediaElementSource(el); }catch(e){ continue; }
+    const g = actx.createGain(); g.gain.value = 0;
+    src.connect(g); g.connect(musicBus);
+    const tr = music[name] = {el, g, name, ok:false, failed:false};
+    // iOS only lets <audio> start later if it was started once during a tap — do that silently now
+    if(IS_IOS){ const p = el.play(); if(p && p.then) p.then(()=>{ if(currentTrack !== name) el.pause(); }).catch(()=>{}); }
+    el.addEventListener('canplay', ()=>{ tr.ok = true; updateMusic(); });
+    el.addEventListener('error', ()=>{ tr.failed = true; });
+  }
+  // warm up the in-game themes in the background so they're ready by the first floor
+  setTimeout(()=>{ for(const n of ['explore','chase','escape','gameover']) requestTrack(n); }, 4000);
+  setTimeout(()=> requestTrack('deep'), 30000);
+}
+function requestTrack(name){
+  const tr = music[name];
+  if(tr && !tr.ok && !tr.failed && tr.el.preload !== 'auto'){ tr.el.preload = 'auto'; tr.el.load(); }
+}
+function fadeOutCurrent(fade){
+  const old = currentTrack && music[currentTrack];
+  if(!old) return;
+  const t = actx.currentTime;
+  old.g.gain.cancelScheduledValues(t);
+  old.g.gain.setTargetAtTime(0, t, fade/3);
+  setTimeout(()=>{ if(currentTrack !== old.name) old.el.pause(); }, fade*1000 + 200);
+}
+function playMusic(name, fade){
+  fade = fade == null ? 1.5 : fade;
+  const tr = music[name];
+  if(currentTrack === name) return true;
+  if(!tr || !tr.ok){
+    // not ready (still loading, or missing): never leave the previous theme playing over the wrong scene
+    requestTrack(name);
+    fadeOutCurrent(fade);
+    currentTrack = null; recordedMusic = false;
+    return false;
+  }
+  fadeOutCurrent(fade);
+  if(!MUSIC_TRACKS[name] || tr.el.ended) tr.el.currentTime = 0;
+  const p = tr.el.play(); if(p && p.catch) p.catch(()=>{});
+  const t = actx.currentTime;
+  tr.g.gain.cancelScheduledValues(t);
+  tr.g.gain.setTargetAtTime(1, t, fade/3);
+  currentTrack = name; recordedMusic = true;
+  return true;
+}
+// pick the loop that fits what's happening; stings are started directly by endGame
+let lastChaseT = -99;
+function updateMusic(){
+  if(!actx || !Object.keys(music).length) return;
+  const onMenu = !document.getElementById('startscreen').classList.contains('hidden');
+  if(onMenu){ playMusic('menu'); return; }
+  if(!running || gameEnded) return;
+  const now = performance.now()/1000;
+  if(steve && steve.hunting) lastChaseT = now;
+  // linger on the chase theme a few seconds so it doesn't flap on and off
+  const want = now - lastChaseT < 4 ? 'chase' : (level >= 3 ? 'deep' : 'explore');
+  if(currentTrack !== want) playMusic(want, want === 'chase' ? 0.6 : 2.5);
 }
 
 function thump(vol){
@@ -807,7 +889,10 @@ const SOUND_GROUPS = {
   giggle: ['giggle1','giggle2','giggle3','giggle4','kids_hihi'],
   whisper: ['kids_kdejsi','kids_vidime'],
   step: ['step1','step2','step3'],
-  growl: ['growl'], shriek: ['shriek']
+  growl: ['growl'], shriek: ['shriek'],
+  cabinet: ['cabinet_glitch'], speaker: ['speaker_crackle'], phantom: ['phantom_sting'],
+  hopsikStep: ['hopsik_step1','hopsik_step2'], squeak: ['hopsik_squeak'], hopsikCatch: ['hopsik_catch'],
+  paper: ['note_paper']
 };
 // spoken lines → file
 const VOICE_LINES = {
@@ -815,7 +900,8 @@ const VOICE_LINES = {
   'Dole je to horší.': 'steve_dole', 'Vidíme tě…': 'kids_vidime', 'Pojď si s námi hrát.': 'kids_pojd'
 };
 // longest useful length per sound (s): generated files carry silence and extra hits
-const SOUND_MAXLEN = {step:0.55, giggle:3.2, whisper:2.5, growl:2.8, shriek:1.6};
+const SOUND_MAXLEN = {step:0.55, giggle:3.2, whisper:2.5, growl:2.8, shriek:1.6,
+  cabinet:2.2, speaker:1.6, phantom:2, hopsikStep:0.6, squeak:1.2, hopsikCatch:3.5, paper:1.4};
 const soundNames = [...new Set(Object.values(SOUND_GROUPS).flat().concat(Object.values(VOICE_LINES)))];
 const soundData = {}, sounds = {};
 for(const n of soundNames){
@@ -863,14 +949,15 @@ function pickSound(group){
   const list = SOUND_GROUPS[group].filter(n=> sounds[n]);
   return list.length ? sounds[list[Math.floor(Math.random()*list.length)]] : null;
 }
-// play a buffer into `dest` (a spatialOut chain, or the master bus); returns its length in seconds
-function playBuffer(buf, dest, vol, rate, wet){
+// play a buffer into `dest` (a spatialOut chain, or the master bus), optionally `delay` s later;
+// returns its length in seconds
+function playBuffer(buf, dest, vol, rate, wet, delay){
   const src = actx.createBufferSource();
   src.buffer = buf; src.playbackRate.value = rate || 1;
   const g = actx.createGain(); g.gain.value = vol;
   src.connect(g); g.connect(dest || masterGain);
   if(wet){ const w = actx.createGain(); w.gain.value = wet; g.connect(w); w.connect(reverb); }
-  src.start();
+  src.start(actx.currentTime + (delay || 0));
   return buf.duration / (rate || 1);
 }
 
@@ -1563,8 +1650,11 @@ const TOUCH_SENS = 0.0055;
 // extra safety net: some sandboxed preview frames keep the AudioContext
 // suspended until a direct gesture on the page is registered.
 function unlockAudioOnce(){
-  if(actx && (actx.state === 'suspended' || actx.state === 'interrupted') && !paused) actx.resume().catch(()=>{});
+  // the first tap/click anywhere starts the audio engine, so the menu music can play
+  if(!actx){ initAudio(); return; }
+  if((actx.state === 'suspended' || actx.state === 'interrupted') && !paused) actx.resume().catch(()=>{});
 }
+window.addEventListener('touchend', unlockAudioOnce, {passive:true});
 window.addEventListener('pointerdown', unlockAudioOnce);
 window.addEventListener('keydown', unlockAudioOnce);
 window.addEventListener('touchstart', unlockAudioOnce, {passive:true});
@@ -2126,6 +2216,7 @@ function step(dt,t){
   hideEl.textContent = playerHidden ? 'Schovaný' : 'Přikrčený';
 
   advanceSteve(dt,t);
+  updateMusic();
   advanceKids(dt,t);
   for(const k of kids){
     if(Math.hypot(player.x-k.x, player.z-k.z) < PR+0.4){
@@ -2260,8 +2351,8 @@ function endGame(won, cause){
     stat.textContent = level+'. patro · přežil jsi '+fmtTime(elapsed)+' · celkem '+fmtTime(runTime);
     if(cause === 'mascot'){
       // Hopsík has no voice — just a slowed-down, warped laugh
-      const rec = actx && sounds['kids_hihi'];
-      if(rec) playBuffer(rec, masterGain, 0.9, 0.6, 0.5); else steveGrowl();
+      const rec = actx && (pickSound('hopsikCatch') || sounds['kids_hihi']);
+      if(rec) playBuffer(rec, masterGain, 0.9, rec === sounds['kids_hihi'] ? 0.6 : 1, 0.5); else steveGrowl();
     } else speak(cause==='kids' ? 'Pojď si s námi hrát.' : 'Našel jsem tě.');
     thump(0.35);
     haptic([300,80,500]);
@@ -2272,6 +2363,7 @@ function endGame(won, cause){
     try{ showSecret = !localStorage.getItem('hk3d.secret'); localStorage.setItem('hk3d.secret','1'); }catch(e){ showSecret = true; }
   }
   if(showSecret){ title.textContent = 'TAJNÝ KONEC'; title.style.color = '#ffd23a'; }
+  if(actx) playMusic(showSecret ? 'secret' : (won ? 'escape' : 'gameover'), 0.4);
   document.getElementById('endSecret').classList.toggle('hidden', !showSecret);
   phantom.visible = false; scareLight.intensity = 0;
   updateNotesLabels();
@@ -2345,9 +2437,19 @@ function inFlashlight(m){
 function advanceMascots(dt,t){
   const sp = 2.3 * levelCfg.speedMul;
   for(const m of mascots){
+    const wasMoving = m.moving;
     m.moving = false;
     const d = Math.hypot(player.x-m.x, player.z-m.z);
-    if(d > CELL*8 || inFlashlight(m)) continue;
+    if(d > CELL*8) continue;
+    if(inFlashlight(m)){
+      // caught in the beam mid-step: it freezes with a creaky squeak
+      if(wasMoving && actx && t - (m.squeakT || 0) > 2){
+        m.squeakT = t;
+        const sq = pickSound('squeak');
+        if(sq){ const s = spatialize(m.x, m.z, CELL*6); playBuffer(sq, spatialOut(s.pan, false), 0.3 + s.vol*0.6, 1); }
+      }
+      continue;
+    }
     if(t - m.lastRepath > 0.7){
       const [mr,mc] = cellAt(m.x,m.z), [pr,pc] = cellAt(player.x,player.z);
       m.path = bfsPath(mr,mc,pr,pc);
@@ -2370,7 +2472,9 @@ function mascotStep(m){
   const out = spatialOut(s.pan, !hasLineOfSight(m, player));
   const rec = pickSound('step');
   // lighter, bouncier steps than Steve's
-  if(rec) playBuffer(rec, out, s.vol*s.vol*0.6, 1.35 + Math.random()*0.1);
+  const own = pickSound('hopsikStep');
+  if(own) playBuffer(own, out, s.vol*s.vol*0.8, 0.95 + Math.random()*0.1);
+  else if(rec) playBuffer(rec, out, s.vol*s.vol*0.6, 1.35 + Math.random()*0.1);
 }
 function animateMascots(t){
   for(const m of mascots){
@@ -2474,7 +2578,8 @@ function openNote(i){
   document.getElementById('noteText').textContent = NOTES[i][1];
   document.getElementById('noteSecret').classList.toggle('hidden', i !== NOTES.length-1);
   noteScreen.classList.remove('hidden');
-  pickupChime([392, 330]);
+  const paper = actx && pickSound('paper');
+  if(paper) playBuffer(paper, masterGain, 0.8, 1); else pickupChime([392, 330]);
 }
 function closeNote(){
   noteScreen.classList.add('hidden');
@@ -2560,7 +2665,9 @@ function cabinetScare(){
   let n = 0;
   const flick = setInterval(()=>{ scareLight.intensity = (n++ % 2) ? 0.4 : 3; }, 90);
   setTimeout(()=>{ clearInterval(flick); scareLight.intensity = 0; scr.material = orig; }, 1500);
-  arcadeJingle(spatialize(best.position.x, best.position.z, CELL*4).pan, false);
+  const pan = spatialize(best.position.x, best.position.z, CELL*4).pan;
+  const glitch = pickSound('cabinet');
+  if(glitch) playBuffer(glitch, spatialOut(pan, false), 0.9, 1, 0.3); else arcadeJingle(pan, false);
   flashStatic();
   haptic(60);
   return true;
@@ -2575,7 +2682,11 @@ function speakerLaugh(t){
   if(actx.createStereoPanner){ const p = actx.createStereoPanner(); p.pan.value = Math.random()*1.4-0.7; p.connect(masterGain); dest = p; }
   bp.connect(sh); sh.connect(dest);
   const w = actx.createGain(); w.gain.value = 0.8; sh.connect(w); w.connect(reverb);
-  playBuffer(rec, bp, 0.7, 0.82);
+  // the speaker crackles on first, then the laugh comes through it
+  const crackle = pickSound('speaker');
+  const lead = crackle ? Math.min(0.6, crackle.duration*0.5) : 0;
+  if(crackle) playBuffer(crackle, dest, 0.8, 1, 0.4);
+  playBuffer(rec, bp, 0.7, 0.82, 0, lead);
   lightsOutUntil = t + 0.7;
   return true;
 }
@@ -2594,7 +2705,8 @@ function phantomSteve(){
   phantom.rotation.y = Math.atan2(player.x-cen.x, player.z-cen.z);
   const seq = [[0,true],[140,false],[230,true],[520,false]];
   for(const [ms,on] of seq) setTimeout(()=>{ phantom.visible = on && running && !gameEnded; }, ms);
-  stinger();
+  const sting = pickSound('phantom');
+  if(sting) playBuffer(sting, masterGain, 0.9, 1, 0.4); else stinger();
   haptic([40,40,40]);
   return true;
 }
@@ -2756,6 +2868,7 @@ function quitToMenu(){
   lockhint.classList.add('hidden');
   document.getElementById('startscreen').classList.remove('hidden');
   updateBestLabel();
+  updateMusic();
 }
 document.getElementById('resumeBtn').addEventListener('click', resumeGame);
 document.getElementById('pauseMenuBtn').addEventListener('click', quitToMenu);
@@ -2908,6 +3021,7 @@ document.getElementById('menuBtn').addEventListener('click', ()=>{
   document.getElementById('endscreen').classList.add('hidden');
   document.getElementById('startscreen').classList.remove('hidden');
   updateBestLabel();
+  updateMusic();
 });
 
 // offline cache for the installed iPhone app (only works when served over https)
