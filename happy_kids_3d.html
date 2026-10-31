@@ -14,6 +14,16 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" href="icon-512.png">
 <link rel="manifest" href="manifest.webmanifest">
+<!-- link preview when the game is shared (WhatsApp, Messenger, Discord…) -->
+<meta name="description" content="Horor v opuštěné herně. Najdi žetony, vyhni se dětem s papírovými čepicemi a uteč Stevovi.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Happy Kids 3D">
+<meta property="og:description" content="Horor v opuštěné herně. Najdi žetony, vyhni se dětem s papírovými čepicemi a uteč Stevovi.">
+<meta property="og:url" content="https://waly-one.github.io/happykids/">
+<meta property="og:image" content="https://waly-one.github.io/happykids/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Special+Elite&family=VT323&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -221,6 +231,12 @@
   .screen > :first-child{margin-top:auto !important;}
   .screen > :last-child{margin-bottom:auto !important;}
   #rotatescreen{z-index:45;}
+  .notePaper{
+    max-width:460px;padding:26px 28px;background:#e8dfc4;color:#2a1a10;transform:rotate(-1.2deg);
+    font-family:'Special Elite',monospace;font-size:17px;line-height:1.6;text-align:left;
+    box-shadow:0 0 0 1px #b8a77a, 0 12px 40px rgba(0,0,0,.7);
+  }
+  .noteHead{font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#7a5a30;margin-bottom:12px;}
   .rotIcon{font-size:64px;animation:rotHint 1.8s ease-in-out infinite;}
   @keyframes rotHint{0%,30%{transform:rotate(0)}60%,100%{transform:rotate(-90deg)}}
 </style>
@@ -270,6 +286,8 @@
     Přikrčený u automatu jsi <b>schovaný</b> a Steve tě nevidí. Poslouchej jeho kroky — a hihňání dětí.
     Každý útěk tě zavede o <b>patro níž</b>: větší bludiště, rychlejší Steve, víc dětí.
     První dítě, které tě na patře chytí, tě jen vyděsí — druhé už ne.<span class="only-desktop"> <b>P / Esc</b> = pauza.</span>
+    Od 3. patra se ve tmě toulá <b>Hopsík</b> — hýbe se jen tam, kam nesvítí tvoje baterka.
+    Na zdech najdeš <b>poznámky</b>, které prozradí, co se v herně stalo.
   </div>
   <div class="sub" style="margin-bottom:10px;">Obtížnost</div>
   <div id="diffPicker" style="display:flex;gap:10px;margin-bottom:26px;">
@@ -284,8 +302,19 @@
       <button class="playbtn mousebtn" data-mouse="edge" style="padding:10px 22px;font-size:14px;">Okraj obrazovky</button>
     </div>
   </div>
-  <div class="sub" id="bestLbl" style="margin:-12px 0 22px;letter-spacing:1px;text-transform:none;"></div>
+  <div class="sub" id="bestLbl" style="margin:-12px 0 6px;letter-spacing:1px;text-transform:none;"></div>
+  <div class="sub notesLbl" style="margin:0 0 22px;letter-spacing:1px;text-transform:none;"></div>
   <button class="playbtn" id="startBtn">Vstoupit do bludiště</button>
+  <button class="playbtn shareBtn" style="margin-top:14px;padding:10px 22px;font-size:14px;">📤 Pošli kamarádovi</button>
+</div>
+
+<div class="screen hidden" id="notescreen">
+  <div class="notePaper">
+    <div class="noteHead" id="noteNum"></div>
+    <div id="noteText"></div>
+    <div class="noteHead hidden" id="noteSecret" style="margin-top:16px;">Máš všechny poznámky. Uteč z patra — čeká tě tajný konec.</div>
+  </div>
+  <button class="playbtn" id="noteClose" style="margin-top:24px;">Pokračovat</button>
 </div>
 
 <div class="screen hidden" id="rotatescreen">
@@ -301,16 +330,23 @@
   </div>
   <button class="playbtn" id="resumeBtn">Pokračovat</button>
   <button class="playbtn" id="pauseMenuBtn" style="margin-top:14px;padding:10px 22px;font-size:14px;">Hlavní menu</button>
-  <div class="sub only-desktop" style="margin:22px 0 0;">P nebo Esc = pauza</div>
+  <div class="sub notesLbl" style="margin:22px 0 0;text-transform:none;letter-spacing:1px;"></div>
+  <div class="sub only-desktop" style="margin:12px 0 0;">P nebo Esc = pauza</div>
   <div class="sub only-touch" style="margin:22px 0 0;text-transform:none;letter-spacing:1px;">Na iPhonu vypni tichý režim, jinak hra nehraje zvuk.</div>
 </div>
 
 <div class="screen hidden" id="endscreen">
   <h1 class="title" id="endTitle">KONEC HRY</h1>
   <div class="stat" id="endStat"></div>
+  <div class="desc hidden" id="endSecret" style="color:#f0e2a0;">
+    Přečetl jsi všechny poznámky a teď znáš pravidla herny. Steve tu hru nikdy nehrál proti tobě — hrál ji o tebe.
+    Tentokrát ses neohlédl a na „Sbohem“ jsi neodpověděl. Dveře se otevřely a za nimi bylo ráno.
+    Jen tvoje papírová čepice zůstala ležet na koberci s konfetami.
+  </div>
   <button class="playbtn hidden" id="nextBtn">Sejít o patro níž</button>
   <button class="playbtn" id="restartBtn">Zkusit patro znovu</button>
   <button class="playbtn" id="menuBtn" style="margin-top:14px;padding:10px 22px;font-size:14px;">Hlavní menu</button>
+  <button class="playbtn shareBtn" style="margin-top:14px;padding:10px 22px;font-size:14px;">📤 Pošli kamarádovi</button>
 </div>
 
 <script>
@@ -1192,12 +1228,13 @@ function makeCabinet(){
   const trimMat = btnMats[Math.floor(rng()*btnMats.length)];
   add(cabGeo.trim, trimMat, -0.372, 0.875, 0);
   add(cabGeo.trim, trimMat,  0.372, 0.875, 0);
+  g.userData.screen = scr;
   return g;
 }
-let cabinets = [], cabinetRects = [];
+let cabinets = [], cabinetRects = [], cabinetCells = new Set();
 function buildCabinets(){
   for(const c of cabinets) scene.remove(c);
-  cabinets = []; cabinetRects = [];
+  cabinets = []; cabinetRects = []; cabinetCells = new Set();
   for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
     if(r+c<3 || (r===exitCell[0] && c===exitCell[1])) continue;
     if(rng() > 0.28) continue;
@@ -1219,7 +1256,7 @@ function buildCabinets(){
     const cab = makeCabinet();
     cab.position.set(px,0,pz); cab.rotation.y = rot;
     scene.add(cab);
-    cabinets.push(cab); cabinetRects.push(rect);
+    cabinets.push(cab); cabinetRects.push(rect); cabinetCells.add(r*COLS+c);
   }
 }
 
@@ -1797,6 +1834,9 @@ function newGame(floor){
   buildKids();
   buildCabinets();
   buildPickups();
+  buildMascots();
+  buildNotes();
+  resetScares();
   setExitLocked(tokensNeeded > 0);
   const [sr,sc0] = pickSteveSpawn();
   const sc = cellCenter(sr, sc0);
@@ -1949,6 +1989,7 @@ function kidScare(k){
   heartBPM = Math.max(heartBPM, 160);
   setHeartTarget(150);
   flashStatic();
+  haptic([200,100,200]);
   shriek();
   setTimeout(()=>{ if(!gameEnded) showSubtitle('Vidíme tě…'); }, 550);
   const buzz = document.getElementById('buzz');
@@ -1978,6 +2019,7 @@ function triggerSighting(t){
   playMotif(0.85);
   scheduleMotif(14 + Math.random()*8);
   showSubtitle('Vidím tě.');
+  haptic([80,60,80]);
   flashStatic();
 }
 function showSubtitle(text, pickup){
@@ -2061,12 +2103,14 @@ function step(dt,t){
     tokensFound++;
     if(tokensFound >= tokensNeeded){
       setExitLocked(false);
+      haptic([60,60,120]);
       pickupChime([523, 659, 784, 1047]);
       showSubtitle('Východ je otevřený!', true);
     } else {
       updateObjective();
       pickupChime([784, 1175]);
       showSubtitle('Žeton '+tokensFound+'/'+tokensNeeded, true);
+      haptic(40);
     }
   }
   resolveCircle(player, PR);
@@ -2087,6 +2131,12 @@ function step(dt,t){
       break;
     }
   }
+  advanceMascots(dt,t);
+  for(const m of mascots){
+    if(Math.hypot(player.x-m.x, player.z-m.z) < PR+0.5){ endGame(false,'mascot'); break; }
+  }
+  checkNotes();
+  updateScares(dt,t);
 
   const dist = Math.hypot(steve.x-player.x, steve.z-player.z);
   // sprinting is loud — a wandering Steve nearby comes to check the noise
@@ -2127,6 +2177,12 @@ function step(dt,t){
     }
     const ang = Math.atan2(kdx*rgtX + kdz*rgtZ, kdx*fwdX + kdz*fwdZ) * 180/Math.PI;
     if(kd < warnD && Math.abs(ang) > 50){ warnKid = k; warnD = kd; warnAngle = ang; }
+  }
+  for(const m of mascots){
+    if(!m.moving) continue;
+    const mdx = m.x-player.x, mdz = m.z-player.z, md = Math.hypot(mdx, mdz);
+    const ang = Math.atan2(mdx*rgtX + mdz*rgtZ, mdx*fwdX + mdz*fwdZ) * 180/Math.PI;
+    if(md < warnD && Math.abs(ang) > 50){ warnKid = m; warnD = md; warnAngle = ang; }
   }
   const kidWarn = document.getElementById('kidWarn');
   if(warnKid){
@@ -2194,17 +2250,361 @@ function endGame(won, cause){
       + (record ? ' · NOVÝ REKORD!' : '');
     document.getElementById('nextBtn').textContent = 'Sejít do '+(level+1)+'. patra';
     speak(level === 1 ? 'Sbohem.' : 'Dole je to horší.');
+    haptic(80);
   } else {
-    title.textContent = cause==='kids' ? 'DĚTI TĚ CHYTILY' : 'STEVE TĚ NAŠEL';
+    title.textContent = {kids:'DĚTI TĚ CHYTILY', mascot:'HOPSÍK TĚ OBJAL'}[cause] || 'STEVE TĚ NAŠEL';
     title.style.color = '#e83a3a';
     stat.textContent = level+'. patro · přežil jsi '+fmtTime(elapsed)+' · celkem '+fmtTime(runTime);
-    speak(cause==='kids' ? 'Pojď si s námi hrát.' : 'Našel jsem tě.');
+    if(cause === 'mascot'){
+      // Hopsík has no voice — just a slowed-down, warped laugh
+      const rec = actx && sounds['kids_hihi'];
+      if(rec) playBuffer(rec, masterGain, 0.9, 0.6, 0.5); else steveGrowl();
+    } else speak(cause==='kids' ? 'Pojď si s námi hrát.' : 'Našel jsem tě.');
     thump(0.35);
+    haptic([300,80,500]);
   }
+  // all notes found: the first escape afterwards reveals the secret ending
+  let showSecret = false;
+  if(won && notesFound >= NOTES.length){
+    try{ showSecret = !localStorage.getItem('hk3d.secret'); localStorage.setItem('hk3d.secret','1'); }catch(e){ showSecret = true; }
+  }
+  if(showSecret){ title.textContent = 'TAJNÝ KONEC'; title.style.color = '#ffd23a'; }
+  document.getElementById('endSecret').classList.toggle('hidden', !showSecret);
+  phantom.visible = false; scareLight.intensity = 0;
+  updateNotesLabels();
   document.getElementById('nextBtn').classList.toggle('hidden', !won);
   document.getElementById('restartBtn').classList.toggle('hidden', !!won);
   end.classList.remove('hidden');
 }
+
+/* ================= HAPTICS (Android; iOS Safari ignores vibrate) ================= */
+function haptic(pattern){
+  try{ if(navigator.vibrate) navigator.vibrate(pattern); }catch(e){}
+}
+
+/* ================= HOPSÍK — the mascot of the lower floors ================= */
+// From floor 3 on, a rotting rabbit mascot roams the dark. It only moves where
+// your flashlight doesn't reach — keep it in the beam, and keep the battery up.
+const mascotGeo = {
+  body: new THREE.CylinderGeometry(0.32,0.42,1.15,10),
+  head: new THREE.SphereGeometry(0.34,14,12),
+  ear:  new THREE.CylinderGeometry(0.06,0.08,0.62,8),
+  eye:  new THREE.SphereGeometry(0.065,8,8),
+  grin: new THREE.TorusGeometry(0.15,0.022,6,16,Math.PI),
+  foot: new THREE.SphereGeometry(0.17,8,6)
+};
+const mascotFur = new THREE.MeshStandardMaterial({color:0x8a6a78, roughness:1});
+const mascotBelly = new THREE.MeshStandardMaterial({color:0xb8a89a, roughness:1});
+const mascotEyeMat = new THREE.MeshBasicMaterial({color:0xf4f0e0, fog:false});
+const mascotGrinMat = new THREE.MeshBasicMaterial({color:0x2a0606});
+function makeMascot(){
+  const g = new THREE.Group();
+  const add = (geo, mat, x, y, z)=>{ const m = new THREE.Mesh(geo, mat); m.position.set(x,y,z); g.add(m); return m; };
+  add(mascotGeo.foot, mascotFur, -0.18, 0.12, 0.06).scale.set(1,0.6,1.5);
+  add(mascotGeo.foot, mascotFur,  0.18, 0.12, 0.06).scale.set(1,0.6,1.5);
+  add(mascotGeo.body, mascotFur, 0, 0.8, 0);
+  add(mascotGeo.head, mascotBelly, 0, 0.75, 0.22).scale.set(0.8,1.1,0.4);
+  add(mascotGeo.head, mascotFur, 0, 1.62, 0);
+  const earL = add(mascotGeo.ear, mascotFur, -0.16, 2.12, 0); earL.rotation.z =  0.18;
+  const earR = add(mascotGeo.ear, mascotFur,  0.16, 2.05, 0); earR.rotation.z = -0.55; // one bent ear
+  add(mascotGeo.eye, mascotEyeMat, -0.12, 1.7, 0.29);
+  add(mascotGeo.eye, mascotEyeMat,  0.12, 1.7, 0.29);
+  const grin = add(mascotGeo.grin, mascotGrinMat, 0, 1.55, 0.3); grin.rotation.z = Math.PI;
+  return g;
+}
+let mascots = [];
+function buildMascots(){
+  for(const m of mascots) scene.remove(m.group);
+  mascots = [];
+  const count = level >= 5 ? 2 : (level >= 3 ? 1 : 0);
+  if(!count) return;
+  const fromStart = bfsDist(0,0);
+  const cands = [];
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++)
+    if(fromStart[r][c] >= 14 && !(r===exitCell[0] && c===exitCell[1])) cands.push([r,c]);
+  for(let i=0;i<count && cands.length;i++){
+    const [r,c] = cands.splice(Math.floor(rng()*cands.length), 1)[0];
+    const cen = cellCenter(r,c);
+    const g = makeMascot();
+    g.position.set(cen.x, 0, cen.z);
+    scene.add(g);
+    mascots.push({group:g, x:cen.x, z:cen.z, path:[], lastRepath:0, moving:false, stepT:0, phase:rng()*6.28});
+  }
+}
+function inFlashlight(m){
+  if(battery <= 0) return false;
+  const dx = m.x-player.x, dz = m.z-player.z, d = Math.hypot(dx,dz) || 0.001;
+  if(d > flashlight.distance) return false;
+  if((dx*-Math.sin(yaw) + dz*-Math.cos(yaw))/d < Math.cos(0.55)) return false; // outside the ~30° beam
+  return d < CELL*1.2 || hasLineOfSight(m, player);
+}
+function advanceMascots(dt,t){
+  const sp = 2.3 * levelCfg.speedMul;
+  for(const m of mascots){
+    m.moving = false;
+    const d = Math.hypot(player.x-m.x, player.z-m.z);
+    if(d > CELL*8 || inFlashlight(m)) continue;
+    if(t - m.lastRepath > 0.7){
+      const [mr,mc] = cellAt(m.x,m.z), [pr,pc] = cellAt(player.x,player.z);
+      m.path = bfsPath(mr,mc,pr,pc);
+      if(m.path.length>1) m.path.shift(); else m.path = [];
+      m.lastRepath = t;
+    }
+    const dest = m.path.length ? cellCenter(m.path[0][0], m.path[0][1]) : {x:player.x, z:player.z};
+    const dx = dest.x-m.x, dz = dest.z-m.z, dd = Math.hypot(dx,dz);
+    if(dd < 0.15){ if(m.path.length) m.path.shift(); continue; }
+    m.x += dx/dd*sp*dt; m.z += dz/dd*sp*dt;
+    m.moving = true;
+    m.stepT -= dt;
+    if(m.stepT <= 0){ m.stepT = 0.42; mascotStep(m); }
+  }
+}
+function mascotStep(m){
+  if(!actx) return;
+  const s = spatialize(m.x, m.z, CELL*6);
+  if(s.vol <= 0) return;
+  const out = spatialOut(s.pan, !hasLineOfSight(m, player));
+  const rec = pickSound('step');
+  // lighter, bouncier steps than Steve's
+  if(rec) playBuffer(rec, out, s.vol*s.vol*0.6, 1.35 + Math.random()*0.1);
+}
+function animateMascots(t){
+  for(const m of mascots){
+    const g = m.group;
+    g.position.x = m.x; g.position.z = m.z;
+    let diff = Math.atan2(player.x-m.x, player.z-m.z) - g.rotation.y;
+    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    g.rotation.y += diff*(m.moving ? 0.2 : 0.02);
+    g.position.y = m.moving ? Math.abs(Math.sin(t*9+m.phase))*0.18 : g.position.y*0.85;
+    g.rotation.z = m.moving ? 0 : Math.sin(t*0.7+m.phase)*0.03;
+  }
+}
+
+/* ================= NOTES ON THE WALLS ================= */
+// Twelve notes tell what happened to the arcade. They're read in order across
+// runs (progress is kept in this browser); finding all of them unlocks a secret ending.
+const NOTES = [
+  ['Leták, 1994', 'Vítejte v HAPPY KIDS! Otevřeno nonstop. Kdo nasbírá 1000 žetonů, dostane cenu, na kterou nikdy nezapomene.'],
+  ['Zápisník pokladní', 'Máme nového nočního správce. Jmenuje se Steve a je moc milý. Prý tu bude i spát, aby se herna nikdy nemusela zavírat.'],
+  ['Zápisník pokladní', 'Dnes byla velká oslava narozenin. Děti dostaly papírové čepice a Steve jim slíbil, že párty nikdy neskončí.'],
+  ['Zápisník pokladní', 'Rodiče volali, že se děti nevrátily domů. Steve říkal, že si ještě hrají. Slyšela jsem je smát se za automaty.'],
+  ['Vzkaz na účtence', 'Chodby jsou každou noc delší. Ráno jsem napočítala o tři řady automatů víc než včera.'],
+  ['Inventura skladu', 'Kostým Hopsíka visí ve skladu. Ale pokaždé, když zhasnu, je kousek blíž ke dveřím.'],
+  ['Načmárané fixou', 'Děti se nehýbou, když se na ně díváš. Steve říká, že je to jen hra. Nikdy mi neřekl, jak se vyhrává.'],
+  ['Roztržený plánek', 'Našla jsem schodiště dolů. Pod hernou je další herna. A pod ní další. A pod ní…'],
+  ['Vzkaz na žetonu', 'Žetony nejsou na hraní. Otevírají dveře ven. Proto je Steve schovává ve slepých uličkách.'],
+  ['Poslední stránka zápisníku', 'Steve hernu opustit nemůže. Ty ano — když najdeš žetony a nebudeš se ohlížet.'],
+  ['Neznámé písmo', 'Jestli tohle čteš, nejsi první, kdo se tu probudil. Tyhle poznámky jsme psali my všichni.'],
+  ['Vyryto do zdi', 'Poslední pravidlo: až Steve řekne „Sbohem“, neodpovídej. Loučí se jen s těmi, které pustí ven.']
+];
+function loadNotesFound(){ try{ return Math.min(NOTES.length, +localStorage.getItem('hk3d.notes') || 0); }catch(e){ return 0; } }
+function saveNotesFound(n){ try{ localStorage.setItem('hk3d.notes', String(n)); }catch(e){} }
+let notesFound = loadNotesFound();
+const noteTex = makeCanvasTex((g,s)=>{
+  g.fillStyle = '#e8dfc4'; g.fillRect(0,0,s,s);
+  g.fillStyle = 'rgba(120,90,40,0.18)'; g.fillRect(0,0,s,10); g.fillRect(0,s-14,s,14);
+  g.strokeStyle = '#3a2a1a'; g.lineWidth = 2;
+  for(let y=22; y<s-20; y+=11){
+    g.beginPath(); g.moveTo(10, y);
+    for(let x=10; x<s-10; x+=6) g.lineTo(x, y + Math.sin(x*0.7+y)*1.5);
+    g.stroke();
+  }
+  g.fillStyle = '#c0202a'; g.beginPath(); g.arc(s/2, 8, 6, 0, Math.PI*2); g.fill(); // pin
+}, 128);
+noteTex.wrapS = noteTex.wrapT = THREE.ClampToEdgeWrapping;
+const noteGeo = new THREE.PlaneGeometry(0.46, 0.6);
+const noteMat = new THREE.MeshBasicMaterial({map:noteTex});
+let notes = [];
+function buildNotes(){
+  for(const n of notes) scene.remove(n.mesh);
+  notes = [];
+  const want = Math.min(3, NOTES.length - notesFound);
+  if(want <= 0) return;
+  const fromStart = bfsDist(0,0);
+  const cells = [];
+  for(let tries=0; tries<200 && cells.length<want; tries++){
+    const r = Math.floor(rng()*ROWS), c = Math.floor(rng()*COLS);
+    if(fromStart[r][c] < 4 || cabinetCells.has(r*COLS+c)) continue;
+    if(cells.some(([a,b])=> Math.abs(a-r)+Math.abs(b-c) < 5)) continue;
+    const sides = [];
+    if(hWalls[r][c]) sides.push('up');
+    if(hWalls[r+1][c]) sides.push('down');
+    if(vWalls[r][c]) sides.push('left');
+    if(vWalls[r][c+1]) sides.push('right');
+    if(!sides.length) continue;
+    cells.push([r,c]);
+    const side = sides[Math.floor(rng()*sides.length)];
+    const cen = cellCenter(r,c), face = WT/2 + 0.012, off = (rng()-0.5)*1.4;
+    const mesh = new THREE.Mesh(noteGeo, noteMat);
+    let x, z;
+    if(side==='up'){ x = cen.x+off; z = r*CELL+face; mesh.rotation.y = 0; }
+    else if(side==='down'){ x = cen.x+off; z = (r+1)*CELL-face; mesh.rotation.y = Math.PI; }
+    else if(side==='left'){ x = c*CELL+face; z = cen.z+off; mesh.rotation.y = Math.PI/2; }
+    else { x = (c+1)*CELL-face; z = cen.z+off; mesh.rotation.y = -Math.PI/2; }
+    mesh.rotation.z = (rng()-0.5)*0.2;
+    mesh.position.set(x, 1.45, z);
+    scene.add(mesh);
+    notes.push({mesh, x, z, taken:false});
+  }
+}
+function checkNotes(){
+  for(const n of notes){
+    if(n.taken || Math.hypot(player.x-n.x, player.z-n.z) > 1.15) continue;
+    n.taken = true; n.mesh.visible = false;
+    if(notesFound >= NOTES.length) continue;
+    openNote(notesFound);
+    notesFound++;
+    saveNotesFound(notesFound);
+    haptic(30);
+    break;
+  }
+}
+const noteScreen = document.getElementById('notescreen');
+function openNote(i){
+  paused = true;
+  for(const k in keys) keys[k] = false;
+  releaseJoy();
+  if(isLocked()) document.exitPointerLock();
+  lockhint.classList.add('hidden');
+  document.getElementById('noteNum').textContent = 'Poznámka '+(i+1)+'/'+NOTES.length+' · '+NOTES[i][0];
+  document.getElementById('noteText').textContent = NOTES[i][1];
+  document.getElementById('noteSecret').classList.toggle('hidden', i !== NOTES.length-1);
+  noteScreen.classList.remove('hidden');
+  pickupChime([392, 330]);
+}
+function closeNote(){
+  noteScreen.classList.add('hidden');
+  paused = false;
+  requestLook();
+  updateLookHint();
+}
+document.getElementById('noteClose').addEventListener('click', closeNote);
+function notesLabel(){ return 'Poznámky: '+notesFound+'/'+NOTES.length; }
+function updateNotesLabels(){
+  document.querySelectorAll('.notesLbl').forEach(el=> el.textContent = notesLabel());
+}
+updateNotesLabels();
+
+/* ================= JUMP SCARES ================= */
+// Every 35–75 s (never while Steve is hunting) one of three scares fires:
+// a cabinet lighting up with a face, a laugh from the arcade's loudspeakers,
+// or Steve's silhouette flickering at the end of the corridor.
+let scareT = 30, lightsOutUntil = 0;
+const scareLight = new THREE.PointLight(0xff3040, 0, 5, 2);
+scene.add(scareLight);
+const scareScreenTex = makeCanvasTex((g,s)=>{
+  g.fillStyle = '#ffffff'; g.fillRect(0,0,s,s);
+  g.fillStyle = '#000';
+  g.beginPath(); g.arc(s*0.32, s*0.38, s*0.1, 0, Math.PI*2); g.fill();
+  g.beginPath(); g.arc(s*0.68, s*0.38, s*0.1, 0, Math.PI*2); g.fill();
+  g.lineWidth = s*0.06; g.strokeStyle = '#000';
+  g.beginPath(); g.arc(s*0.5, s*0.52, s*0.26, 0.15*Math.PI, 0.85*Math.PI); g.stroke();
+}, 64);
+const scareScreenMat = new THREE.MeshBasicMaterial({map:scareScreenTex, fog:false});
+const phantom = new THREE.Group();
+{
+  const body = new THREE.Mesh(steveBody.geometry, steveMat); body.position.y = 0.75;
+  const head = new THREE.Mesh(steveHead.geometry, steveMat); head.position.y = 1.75;
+  const em = new THREE.MeshBasicMaterial({color:0xff2222, fog:false});
+  const l = new THREE.Mesh(eyeGeo, em); l.position.set(-0.12,1.78,0.25); l.scale.setScalar(1.6);
+  const r = new THREE.Mesh(eyeGeo, em); r.position.set(0.12,1.78,0.25); r.scale.setScalar(1.6);
+  // a faint red rim light so the silhouette reads against the dark corridor
+  const rim = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 2.3), new THREE.MeshBasicMaterial({color:0x3a0000, transparent:true, opacity:0.55, fog:false, depthWrite:false}));
+  rim.position.set(0, 1.1, -0.3);
+  phantom.add(rim, body, head, l, r);
+  phantom.visible = false;
+  scene.add(phantom);
+}
+function resetScares(){
+  scareT = 25 + Math.random()*20;
+  scareLight.intensity = 0;
+  phantom.visible = false;
+}
+function updateScares(dt, t){
+  if(steve.hunting) return;
+  scareT -= dt;
+  if(scareT > 0) return;
+  scareT = 35 + Math.random()*40;
+  const kinds = [cabinetScare, speakerLaugh, phantomSteve].sort(()=> Math.random()-0.5);
+  for(const k of kinds) if(k(t)) return;
+}
+function arcadeJingle(pan, muffled){
+  const out = spatialOut(pan, muffled), t0 = actx.currentTime;
+  [988, 784, 659, 523, 392, 330, 262].forEach((f,i)=>{
+    const o = actx.createOscillator(); o.type = 'square'; o.frequency.value = f;
+    const g = actx.createGain(), t = t0 + i*0.08;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.09, t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.14);
+    o.connect(g); g.connect(out); g.connect(reverb);
+    o.start(t); o.stop(t+0.15);
+  });
+}
+function cabinetScare(){
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+  let best = null, bestD = CELL*2.4;
+  for(const cab of cabinets){
+    const dx = cab.position.x-player.x, dz = cab.position.z-player.z, d = Math.hypot(dx,dz);
+    if(d < 1.2 || d > bestD || (dx*fx+dz*fz)/d < 0.3) continue;
+    if(!hasLineOfSight(player, cab.position) && d > CELL*1.1) continue;
+    best = cab; bestD = d;
+  }
+  if(!best || !actx) return false;
+  const scr = best.userData.screen, orig = scr.material;
+  scr.material = scareScreenMat;
+  scareLight.position.set(best.position.x, 1.3, best.position.z);
+  let n = 0;
+  const flick = setInterval(()=>{ scareLight.intensity = (n++ % 2) ? 0.4 : 3; }, 90);
+  setTimeout(()=>{ clearInterval(flick); scareLight.intensity = 0; scr.material = orig; }, 1500);
+  arcadeJingle(spatialize(best.position.x, best.position.z, CELL*4).pan, false);
+  flashStatic();
+  haptic(60);
+  return true;
+}
+function speakerLaugh(t){
+  const rec = actx && pickSound('giggle');
+  if(!rec) return false;
+  // old ceiling loudspeakers: narrow band, crunchy, lots of echo
+  const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1700; bp.Q.value = 1.1;
+  const sh = actx.createWaveShaper(); sh.curve = makeDistortionCurve(4);
+  let dest = masterGain;
+  if(actx.createStereoPanner){ const p = actx.createStereoPanner(); p.pan.value = Math.random()*1.4-0.7; p.connect(masterGain); dest = p; }
+  bp.connect(sh); sh.connect(dest);
+  const w = actx.createGain(); w.gain.value = 0.8; sh.connect(w); w.connect(reverb);
+  playBuffer(rec, bp, 0.7, 0.82);
+  lightsOutUntil = t + 0.7;
+  return true;
+}
+function phantomSteve(){
+  if(Math.hypot(steve.x-player.x, steve.z-player.z) < CELL*6) return false;
+  // look down the corridor in the direction the player faces
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+  const dir = Math.abs(fx) > Math.abs(fz) ? (fx > 0 ? 'right' : 'left') : (fz > 0 ? 'down' : 'up');
+  const step = {up:[-1,0], down:[1,0], left:[0,-1], right:[0,1]}[dir];
+  let [r,c] = cellAt(player.x, player.z), n = 0;
+  // 2–4 cells away: close enough to be seen through the fog, far enough to be unreachable
+  while(n < 4 && isOpen(r,c,dir)){ r += step[0]; c += step[1]; n++; }
+  if(n < 2) return false;
+  const cen = cellCenter(r,c);
+  phantom.position.set(cen.x, 0, cen.z);
+  phantom.rotation.y = Math.atan2(player.x-cen.x, player.z-cen.z);
+  const seq = [[0,true],[140,false],[230,true],[520,false]];
+  for(const [ms,on] of seq) setTimeout(()=>{ phantom.visible = on && running && !gameEnded; }, ms);
+  stinger();
+  haptic([40,40,40]);
+  return true;
+}
+
+/* ================= SHARE ================= */
+const SHARE_URL = 'https://waly-one.github.io/happykids/';
+async function shareGame(btn){
+  const data = {title:'Happy Kids 3D', text:'Zkus utéct Stevovi z opuštěné herny. Já to zvládl… skoro.', url:SHARE_URL};
+  if(navigator.share){ try{ await navigator.share(data); }catch(e){} return; }
+  const old = btn.textContent;
+  try{ await navigator.clipboard.writeText(SHARE_URL); btn.textContent = 'Odkaz zkopírován ✓'; }
+  catch(e){ btn.textContent = SHARE_URL; }
+  setTimeout(()=>{ btn.textContent = old; }, 2500);
+}
+document.querySelectorAll('.shareBtn').forEach(b=> b.addEventListener('click', ()=> shareGame(b)));
 
 /* ================= PAUSE ================= */
 let paused = false;
@@ -2224,6 +2624,7 @@ function pauseGame(){
 }
 function resumeGame(){
   if(!paused) return;
+  if(!noteScreen.classList.contains('hidden')) return; // reading a note — closed with its own button
   if(isTouch && H > W) return; // still in portrait — keep the rotate prompt
   paused = false;
   pauseScreen.classList.add('hidden');
@@ -2326,6 +2727,7 @@ function render(){
   assignFixtureLights(t);
   for(const l of fixtureLights){
     l.intensity = l.userData.fixture ? 1.5 * fixtureIntensity(l.userData.fixture, t) : 0;
+    if(t < lightsOutUntil) l.intensity *= 0.08; // the loudspeaker scare browns out the lights
   }
 
   if(steve){
@@ -2360,6 +2762,7 @@ function render(){
     }
   }
 
+  animateMascots(t);
   drawMinimap();
   renderer.render(scene, camera);
 

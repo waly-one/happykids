@@ -2,7 +2,7 @@
 // the CDN) is cached, so it starts even without a connection.
 // The game page itself is fetched network-first, so updates show up right away.
 // bump this whenever a cached file other than the page changes (sounds, icons…)
-const CACHE = 'happy-kids-v2';
+const CACHE = 'happy-kids-v3';
 const CORE = ['./happy_kids_3d.html', './manifest.webmanifest', './icon-180.png', './icon-512.png',
   'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'];
 
