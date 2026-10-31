@@ -1167,6 +1167,7 @@ function makeKid(){
   hat.rotation.z = tilt;
   add(kidGeo.pom, kidPomMat, -Math.sin(tilt)*0.15, 1.34+Math.cos(tilt)*0.15, 0);
   g.userData = {legL, legR, armL, armR};
+  spriteKid(g);
   return g;
 }
 
@@ -2312,6 +2313,7 @@ function makeMascot(){
   add(mascotGeo.eye, mascotEyeMat, -0.12, 1.7, 0.29);
   add(mascotGeo.eye, mascotEyeMat,  0.12, 1.7, 0.29);
   const grin = add(mascotGeo.grin, mascotGrinMat, 0, 1.55, 0.3); grin.rotation.z = Math.PI;
+  spriteMascot(g);
   return g;
 }
 let mascots = [];
@@ -2514,6 +2516,7 @@ const phantom = new THREE.Group();
   const rim = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 2.3), new THREE.MeshBasicMaterial({color:0x3a0000, transparent:true, opacity:0.55, fog:false, depthWrite:false}));
   rim.position.set(0, 1.1, -0.3);
   phantom.add(rim, body, head, l, r);
+  phantom.userData = {eyes:[l, r], rim};
   phantom.visible = false;
   scene.add(phantom);
 }
@@ -2607,6 +2610,114 @@ async function shareGame(btn){
   setTimeout(()=>{ btn.textContent = old; }, 2500);
 }
 document.querySelectorAll('.shareBtn').forEach(b=> b.addEventListener('click', ()=> shareGame(b)));
+
+/* ================= CHARACTER SPRITES (sprites/*.png) ================= */
+// Painted characters (made in Canva, transparent PNG) drawn as upright cards that
+// always turn to face the camera and are lit by the flashlight. Any image that's
+// missing — or a page opened as a local file — keeps the built-in 3D figure.
+const SPRITE_FILES = ['steve', 'hopsik', 'doll1', 'doll2'];
+const spriteTex = {}, spriteInfo = {};
+const texLoader = new THREE.TextureLoader();
+for(const n of SPRITE_FILES){
+  texLoader.load('sprites/'+n+'.png', tex=>{
+    spriteInfo[n] = analyzeSprite(tex.image);
+    // crop the texture to the figure itself so its feet sit on the floor
+    const b = spriteInfo[n].box;
+    tex.offset.set(b.l, 1-b.b);
+    tex.repeat.set(b.r-b.l, b.b-b.t);
+    spriteTex[n] = tex;
+    onSpriteLoaded(n);
+  }, undefined, ()=>{});
+}
+// bounding box of the opaque figure, plus where its glowing eyes are (bright yellow pixels near the top)
+function analyzeSprite(img){
+  const c = document.createElement('canvas');
+  const w = c.width = Math.min(256, img.width), h = c.height = Math.round(w * img.height / img.width);
+  const g = c.getContext('2d');
+  g.drawImage(img, 0, 0, w, h);
+  let d;
+  try{ d = g.getImageData(0, 0, w, h).data; }catch(e){ return {box:{l:0,t:0,r:1,b:1}, aspect:img.width/img.height, eyes:null}; }
+  let l = w, r = 0, t = h, b = 0;
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+    if(d[(y*w+x)*4+3] < 128) continue;
+    if(x<l) l=x; if(x>r) r=x; if(y<t) t=y; if(y>b) b=y;
+  }
+  if(r <= l || b <= t){ l = 0; t = 0; r = w-1; b = h-1; }
+  const eyes = [];
+  const yMax = t + (b-t)*0.2;
+  for(let y=t;y<yMax;y++) for(let x=l;x<=r;x++){
+    const i = (y*w+x)*4;
+    if(d[i+3] > 128 && d[i] > 190 && d[i+1] > 160 && d[i+2] < 140) eyes.push([x,y]);
+  }
+  const box = {l:l/w, t:t/h, r:(r+1)/w, b:(b+1)/h};
+  const toLocal = ([x,y])=> [((x - l)/(r+1-l)) - 0.5, 1 - (y - t)/(b+1-t)];
+  let eyePos = null;
+  if(eyes.length >= 4){
+    const mid = (l + r)/2;
+    const avg = arr=> arr.reduce((a,p)=>[a[0]+p[0]/arr.length, a[1]+p[1]/arr.length], [0,0]);
+    const left = eyes.filter(p=> p[0] < mid), right = eyes.filter(p=> p[0] >= mid);
+    if(left.length && right.length) eyePos = [toLocal(avg(left)), toLocal(avg(right))];
+  }
+  return {box, aspect:(r+1-l)/(b+1-t), eyes:eyePos};
+}
+function makeBillboard(name, height, tint){
+  const info = spriteInfo[name], width = height * info.aspect;
+  const geo = new THREE.PlaneGeometry(width, height);
+  geo.translate(0, height/2, 0);
+  const mat = new THREE.MeshLambertMaterial({map:spriteTex[name], transparent:true, alphaTest:0.35, side:THREE.DoubleSide});
+  if(tint !== undefined) mat.color.setHex(tint);
+  const m = new THREE.Mesh(geo, mat);
+  m.userData.width = width; m.userData.height = height;
+  return m;
+}
+// swap a procedural figure for its sprite; `keep` lists children that stay (e.g. Steve's glow)
+function applySprite(group, name, height, keep, tint){
+  if(!spriteTex[name] || group.userData.sprite) return null;
+  for(const ch of group.children) if(!(keep && keep.includes(ch))) ch.visible = false;
+  const s = makeBillboard(name, height, tint);
+  group.add(s);
+  group.userData.sprite = s;
+  return s;
+}
+// put glowing eye spheres over the painted eyes, so they can still turn red when Steve hunts
+function attachEyes(sprite, name, eyeMeshes){
+  const e = spriteInfo[name].eyes;
+  if(!e) return;
+  eyeMeshes.forEach((m,i)=>{
+    sprite.add(m);
+    m.position.set(e[i][0]*sprite.userData.width, e[i][1]*sprite.userData.height, 0.03);
+    m.scale.setScalar(0.7);
+  });
+}
+function pickDoll(){
+  const have = ['doll1','doll2'].filter(n=> spriteTex[n]);
+  return have.length ? have[Math.floor(Math.random()*have.length)] : null;
+}
+function spriteKid(g){ const n = pickDoll(); if(n) applySprite(g, n, 1.3); }
+function spriteMascot(g){ applySprite(g, 'hopsik', 2.35); }
+function onSpriteLoaded(n){
+  if(n === 'steve'){
+    const s = applySprite(steveGroup, 'steve', 2.15, [steveGlow, eyeL, eyeR]);
+    if(s) attachEyes(s, 'steve', [eyeL, eyeR]);
+    const ps = applySprite(phantom, 'steve', 2.15, phantom.userData.eyes.concat(phantom.userData.rim), 0x552222);
+    if(ps) attachEyes(ps, 'steve', phantom.userData.eyes);
+  }
+  if(n === 'hopsik') for(const m of mascots) spriteMascot(m.group);
+  if(n === 'doll1' || n === 'doll2') for(const k of kids) spriteKid(k.group);
+}
+// turn every sprite toward the camera (around the vertical axis only)
+function faceSprite(group, sway){
+  const s = group && group.userData.sprite;
+  if(!s) return;
+  s.rotation.y = Math.atan2(camera.position.x - group.position.x, camera.position.z - group.position.z) - group.rotation.y;
+  s.rotation.z = sway || 0;
+}
+function updateSprites(t){
+  faceSprite(steveGroup, steve && steve.moving ? Math.sin(t*9)*0.04 : 0);
+  faceSprite(phantom);
+  for(const k of kids) faceSprite(k.group, k.moving ? Math.sin(t*16+k.phase)*0.09 : 0);
+  for(const m of mascots) faceSprite(m.group, m.moving ? Math.sin(t*9+m.phase)*0.07 : 0);
+}
 
 /* ================= PAUSE ================= */
 let paused = false;
@@ -2765,6 +2876,7 @@ function render(){
   }
 
   animateMascots(t);
+  updateSprites(t);
   drawMinimap();
   renderer.render(scene, camera);
 
