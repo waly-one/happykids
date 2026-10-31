@@ -312,6 +312,7 @@
     <button class="playbtn diffbtn active" data-diff="medium" style="padding:10px 22px;font-size:14px;">Střední</button>
     <button class="playbtn diffbtn" data-diff="hard" style="padding:10px 22px;font-size:14px;">Těžká</button>
   </div>
+  <div class="sub" style="margin:-14px 0 24px;letter-spacing:1px;text-transform:none;font-size:12px;">Na Snadné ukazuje minimapa od začátku, kde leží všechny žetony.</div>
   <div id="mouseSection">
     <div class="sub" style="margin-bottom:10px;">Rozhlížení myší</div>
     <div style="display:flex;gap:10px;margin-bottom:26px;flex-wrap:wrap;justify-content:center;">
@@ -3193,8 +3194,15 @@ function drawMinimap(){
     mctx.fillStyle = '#3df2ff';
     mctx.fillRect(b.x*sx-1.5, b.z*sy-1.5, 3, 3);
   }
+  // on Easy every token is marked from the start, with a pulsing ring so it's easy to spot on the dark map
+  const showAllTokens = difficulty === 'easy';
+  const pulse = 0.5 + 0.5*Math.sin(performance.now()/250);
   for(const tk of tokens){
-    if(!tk.seen || tk.taken) continue;
+    if(tk.taken || !(tk.seen || showAllTokens)) continue;
+    if(showAllTokens){
+      mctx.strokeStyle = 'rgba(255,210,58,'+(0.35 + 0.5*pulse).toFixed(2)+')'; mctx.lineWidth = 1.5;
+      mctx.beginPath(); mctx.arc(tk.x*sx, tk.z*sy, 5.5 + 2*pulse, 0, Math.PI*2); mctx.stroke();
+    }
     mctx.fillStyle = '#ffd23a'; mctx.strokeStyle = '#ff2bd6'; mctx.lineWidth = 1;
     mctx.beginPath(); mctx.arc(tk.x*sx, tk.z*sy, 3.5, 0, Math.PI*2); mctx.fill(); mctx.stroke();
   }
