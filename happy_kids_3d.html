@@ -1142,6 +1142,7 @@ function buildWallMesh(){
   if(wallMesh){ scene.remove(wallMesh); wallMesh.geometry.dispose(); }
   const geo = new THREE.BoxGeometry(1,1,1);
   const mat = new THREE.MeshStandardMaterial({map:wallTex, emissive:0xffffff, emissiveMap:wallGlowTex, emissiveIntensity:0.9, roughness:0.9});
+  applyWallTexture(mat);
   wallMesh = new THREE.InstancedMesh(geo, mat, wallRects.length);
   const m = new THREE.Matrix4();
   for(let i=0;i<wallRects.length;i++){
@@ -1301,7 +1302,7 @@ const cabGeo = {
   stick: new THREE.CylinderGeometry(0.012,0.012,0.09,6),
   ball: new THREE.SphereGeometry(0.03,8,6),
   btn: new THREE.CylinderGeometry(0.025,0.025,0.02,8),
-  trim: new THREE.BoxGeometry(0.02,1.7,0.5)
+  trim: new THREE.BoxGeometry(0.025,1.7,0.04) // thin neon edge, leaves the side art visible
 };
 const btnMats = NEON.map(c=> new THREE.MeshBasicMaterial({color:c}));
 function makeCabinet(){
@@ -1316,8 +1317,8 @@ function makeCabinet(){
   add(cabGeo.ball, btnMats[0], -0.18, 1.04, 0.42);
   for(let i=0;i<3;i++) add(cabGeo.btn, btnMats[(i+1)%btnMats.length], 0.02+i*0.09, 0.95, 0.43);
   const trimMat = btnMats[Math.floor(rng()*btnMats.length)];
-  add(cabGeo.trim, trimMat, -0.372, 0.875, 0);
-  add(cabGeo.trim, trimMat,  0.372, 0.875, 0);
+  add(cabGeo.trim, trimMat, -0.372, 0.875, 0.31);
+  add(cabGeo.trim, trimMat,  0.372, 0.875, 0.31);
   g.userData.screen = scr;
   return g;
 }
@@ -1401,6 +1402,7 @@ const tokenGeo = {
   halo: new THREE.RingGeometry(0.45,0.7,28)
 };
 const tokenMat = new THREE.MeshBasicMaterial({color:0xffd23a, fog:false});
+let tokenCoinMats = null; // [edge, front, back] once the painted token face (textures/token.jpg) has loaded
 const tokenRimMat = new THREE.MeshBasicMaterial({color:0xff2bd6, fog:false});
 const tokenHaloMat = new THREE.MeshBasicMaterial({color:0xffd23a, transparent:true, opacity:0.5, side:THREE.DoubleSide, fog:false});
 // a soft golden light column, visible down a dark corridor (ignores fog on purpose)
@@ -1438,11 +1440,16 @@ function makePickup(r, c, kind){
   const baseY = kind === 'token' ? 1.1 : 0.55;
   const spin = new THREE.Group(); spin.position.y = baseY; g.add(spin);
   let halo;
+  let billboard = false;
   if(kind === 'token'){
-    const coin = new THREE.Mesh(tokenGeo.coin, tokenMat); coin.rotation.x = Math.PI/2; spin.add(coin);
+    const coin = new THREE.Mesh(tokenGeo.coin, tokenCoinMats || tokenMat); coin.rotation.x = Math.PI/2; spin.add(coin);
     spin.add(new THREE.Mesh(tokenGeo.rim, tokenRimMat));
     const beam = new THREE.Mesh(tokenGeo.beam, tokenBeamMat); beam.position.y = WALL_H/2; g.add(beam);
     halo = new THREE.Mesh(tokenGeo.halo, tokenHaloMat);
+  } else if(spriteTex.battery){
+    spin.add(makeBatteryCard());
+    billboard = true;
+    halo = new THREE.Mesh(battGeo.halo, battHaloMat);
   } else {
     spin.add(new THREE.Mesh(battGeo.body, battBodyMat));
     const cap = new THREE.Mesh(battGeo.cap, battCapMat); cap.position.y = 0.18; spin.add(cap);
@@ -1452,7 +1459,7 @@ function makePickup(r, c, kind){
   halo.rotation.x = -Math.PI/2; halo.position.y = 0.02; g.add(halo);
   g.position.set(cen.x, 0, cen.z);
   scene.add(g);
-  return {group:g, spin, baseY, kind, r, c, x:cen.x, z:cen.z, taken:false, seen:false, phase:rng()*6.28};
+  return {group:g, spin, baseY, kind, r, c, x:cen.x, z:cen.z, taken:false, seen:false, phase:rng()*6.28, billboard};
 }
 function buildPickups(){
   for(const p of batteries.concat(tokens)) scene.remove(p.group);
@@ -2727,7 +2734,7 @@ document.querySelectorAll('.shareBtn').forEach(b=> b.addEventListener('click', (
 // Painted characters (made in Canva, transparent PNG) drawn as upright cards that
 // always turn to face the camera and are lit by the flashlight. Any image that's
 // missing — or a page opened as a local file — keeps the built-in 3D figure.
-const SPRITE_FILES = ['steve', 'hopsik', 'doll1', 'doll2'];
+const SPRITE_FILES = ['steve', 'hopsik', 'doll1', 'doll2', 'battery'];
 const spriteTex = {}, spriteInfo = {};
 const texLoader = new THREE.TextureLoader();
 for(const n of SPRITE_FILES){
@@ -2816,6 +2823,75 @@ function onSpriteLoaded(n){
   }
   if(n === 'hopsik') for(const m of mascots) spriteMascot(m.group);
   if(n === 'doll1' || n === 'doll2') for(const k of kids) spriteKid(k.group);
+  if(n === 'battery') for(const b of batteries){
+    if(b.billboard) continue;
+    b.spin.children.forEach(ch=> ch.visible = false);
+    b.spin.rotation.z = 0;
+    b.spin.add(makeBatteryCard());
+    b.billboard = true;
+  }
+}
+// the battery glows on its own (unlit material), so it stays easy to spot in the dark
+function makeBatteryCard(){
+  const h = 0.5, w = h * spriteInfo.battery.aspect;
+  const geo = new THREE.PlaneGeometry(w, h);
+  const mat = new THREE.MeshBasicMaterial({map:spriteTex.battery, transparent:true, alphaTest:0.3, side:THREE.DoubleSide});
+  return new THREE.Mesh(geo, mat);
+}
+
+/* ================= SURFACE TEXTURES (textures/*.jpg) ================= */
+// Painted wall, cabinet side art and token face made in Canva; each falls back
+// to the procedural canvas texture if it can't load.
+const gameTex = {};
+let wallGlowMap = null;
+for(const n of ['wall', 'cabinet', 'token']){
+  texLoader.load('textures/'+n+'.jpg', tex=>{
+    tex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+    gameTex[n] = tex;
+    onTextureLoaded(n);
+  }, undefined, ()=>{});
+}
+// keep only the bright, saturated pixels (the neon stripes) so just those glow in the dark
+function makeGlowMap(img){
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = Math.round(512 * img.height / img.width);
+  const g = c.getContext('2d');
+  g.drawImage(img, 0, 0, c.width, c.height);
+  let d;
+  try{ d = g.getImageData(0, 0, c.width, c.height); }catch(e){ return null; }
+  const a = d.data;
+  for(let i=0;i<a.length;i+=4){
+    const mx = Math.max(a[i],a[i+1],a[i+2]), mn = Math.min(a[i],a[i+1],a[i+2]);
+    const lum = mx/255, sat = mx ? (mx-mn)/mx : 0;
+    const k = (lum > 0.5 && sat > 0.4) ? Math.min(1, (lum-0.5)/0.3) : 0;
+    a[i] *= k; a[i+1] *= k; a[i+2] *= k;
+  }
+  g.putImageData(d, 0, 0);
+  return new THREE.CanvasTexture(c);
+}
+function applyWallTexture(mat){
+  if(!gameTex.wall || !mat) return;
+  if(!wallGlowMap) wallGlowMap = makeGlowMap(gameTex.wall.image);
+  mat.map = gameTex.wall;
+  mat.emissiveMap = wallGlowMap;
+  mat.emissiveIntensity = wallGlowMap ? 1.1 : 0;
+  mat.needsUpdate = true;
+}
+function onTextureLoaded(n){
+  if(n === 'wall' && wallMesh) applyWallTexture(wallMesh.material);
+  if(n === 'cabinet'){
+    // the three cabinet colours become tints over the same side art
+    [0xffffff, 0xd6c8ff, 0xffd2ea].forEach((c,i)=>{
+      cabBodyMats[i].map = gameTex.cabinet;
+      cabBodyMats[i].color.setHex(c);
+      cabBodyMats[i].needsUpdate = true;
+    });
+  }
+  if(n === 'token'){
+    const face = new THREE.MeshBasicMaterial({map:gameTex.token, fog:false});
+    tokenCoinMats = [tokenMat, face, face];
+    for(const tk of tokens) tk.spin.children[0].material = tokenCoinMats;
+  }
 }
 // turn every sprite toward the camera (around the vertical axis only)
 function faceSprite(group, sway){
@@ -2946,7 +3022,8 @@ function render(){
 
   for(const b of batteries.concat(tokens)){
     if(b.taken) continue;
-    b.spin.rotation.y = t*1.6 + b.phase;
+    // painted batteries always face the camera; coins and 3D batteries spin
+    b.spin.rotation.y = b.billboard ? Math.atan2(camera.position.x - b.x, camera.position.z - b.z) : t*1.6 + b.phase;
     b.spin.position.y = b.baseY + Math.sin(t*2.2 + b.phase)*0.06;
   }
 
