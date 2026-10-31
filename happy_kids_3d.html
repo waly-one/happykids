@@ -49,6 +49,12 @@
   #stage{position:fixed;inset:0;}
   #stage canvas{display:block;}
 
+  /* small hands smeared on the "lens" */
+  #handprints{position:fixed;inset:0;z-index:10;pointer-events:none;}
+  #handprints .hand{position:absolute;width:20vmin;height:24vmin;color:rgba(110,14,18,.78);opacity:0;
+    filter:blur(.6px) drop-shadow(0 0 3px rgba(60,0,0,.8));animation:handSmear 2.2s ease-out forwards;}
+  #handprints .hand svg{width:100%;height:100%;}
+  @keyframes handSmear{0%{opacity:0;scale:1.15;}6%{opacity:.85;scale:1;}55%{opacity:.6;}100%{opacity:0;translate:0 4%;}}
   /* full-screen jumpscare: the monster's face lunges at the camera */
   #jumpscare{position:fixed;inset:0;z-index:36;pointer-events:none;background:#000;overflow:hidden;}
   #jumpscare .face{position:absolute;inset:-10%;background-repeat:no-repeat;background-color:#120000;
@@ -265,6 +271,7 @@
 <div id="buzz"></div>
 <div id="staticFlash"></div>
 <div id="lookzone"></div>
+<div id="handprints"></div>
 <div id="jumpscare" class="hidden"><div class="face"></div><div class="noise"></div></div>
 
 <div id="hud" class="hidden">
@@ -440,6 +447,7 @@ function genMaze(){
 }
 function fixtureIntensity(f,t){
   if(f.dead) return Math.random()<0.005 ? 0.6 : 0;
+  if(f.deadUntil && t < f.deadUntil) return 0; // blown by the lamp-burst scare
   const hum = 0.85 + 0.15*Math.sin(t*9+f.seed);
   const flick = (Math.sin(t*0.6+f.seed*3) > 0.93) ? 0.15 : 1;
   return Math.max(0, Math.min(1, hum*flick));
@@ -2387,6 +2395,7 @@ function step(dt,t){
   }
   checkNotes();
   updateScares(dt,t);
+  updateMinorScares(dt,t);
 
   const dist = Math.hypot(steve.x-player.x, steve.z-player.z);
   // sprinting is loud — a wandering Steve nearby comes to check the noise
@@ -2436,6 +2445,10 @@ function step(dt,t){
   if(warnKid){
     kidWarn.style.transform = 'rotate('+warnAngle.toFixed(1)+'deg)';
     kidWarn.style.opacity = (0.35 + 0.65*(1 - warnD/KID_WARN_DIST)).toFixed(2);
+  } else if(t < fakeWarnUntil){
+    // the "whisper behind you" scare: the glow flares with no one there
+    kidWarn.style.transform = 'rotate('+fakeWarnAngle.toFixed(1)+'deg)';
+    kidWarn.style.opacity = 0.9;
   } else kidWarn.style.opacity = 0;
   const targetBPM = Math.max(66, Math.min(185, 190 - dist*7));
   setHeartTarget(steve.hunting ? Math.max(targetBPM,145) : targetBPM);
@@ -2782,6 +2795,10 @@ function resetScares(){
   phantom.visible = false;
   ghostDoll.visible = false;
   blackoutUntil = 0;
+  minorScareT = 12 + Math.random()*10;
+  fakeWarnUntil = stutterUntil = 0;
+  shadowRunner.visible = false; shadowRun = null;
+  document.getElementById('handprints').innerHTML = '';
 }
 function updateScares(dt, t){
   if(steve.hunting) return;
@@ -2838,6 +2855,131 @@ function dollReveal(t){
   setTimeout(()=>{ ghostDoll.visible = false; }, 1500);
   return true;
 }
+/* ---- small scares: just for effect, they never stop you or end the game ----
+   They come every 18–35 s, independent of the big scares above. */
+let minorScareT = 15, fakeWarnUntil = 0, fakeWarnAngle = 180, stutterUntil = 0;
+function updateMinorScares(dt, t){
+  if(steve.hunting || t < blackoutUntil + 2) return;
+  minorScareT -= dt;
+  if(minorScareT > 0) return;
+  minorScareT = 18 + Math.random()*17;
+  if(scareT < 6) return; // a big scare is about to happen anyway
+  const kinds = [whisperBehind, handprints, runningShadow, lampBurst, flashlightStutter].sort(()=> Math.random()-0.5);
+  for(const k of kinds) if(k(t)) return;
+}
+// someone whispers right behind you, and the warning glow flares at the bottom edge — nobody is there
+function whisperBehind(t){
+  const rec = actx && (pickSound('whisper') || pickSound('giggle'));
+  if(!rec) return false;
+  const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800;
+  let dest = masterGain;
+  if(actx.createStereoPanner){ const p = actx.createStereoPanner(); p.pan.value = (Math.random()-0.5)*0.7; p.connect(masterGain); dest = p; }
+  lp.connect(dest);
+  playBuffer(rec, lp, 0.75, 0.95, 0.15);
+  fakeWarnUntil = t + 0.7; fakeWarnAngle = 160 + Math.random()*40;
+  haptic(25);
+  return true;
+}
+// small hands smear across the camera, as if something touched the lens
+const HAND_SVG = '<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg"><g fill="currentColor">'
+  + '<ellipse cx="50" cy="80" rx="27" ry="30"/>'
+  + '<rect x="21" y="22" width="11" height="48" rx="5.5" transform="rotate(-14 26 60)"/>'
+  + '<rect x="35" y="8" width="11" height="58" rx="5.5" transform="rotate(-4 40 60)"/>'
+  + '<rect x="50" y="6" width="11" height="58" rx="5.5" transform="rotate(4 55 60)"/>'
+  + '<rect x="64" y="16" width="10" height="50" rx="5" transform="rotate(12 69 60)"/>'
+  + '<rect x="70" y="58" width="11" height="34" rx="5.5" transform="rotate(48 75 75)"/></g></svg>';
+function handprints(){
+  const box = document.getElementById('handprints');
+  box.innerHTML = '';
+  const n = 2 + Math.floor(Math.random()*2);
+  for(let i=0;i<n;i++){
+    const h = document.createElement('div');
+    h.className = 'hand';
+    h.innerHTML = HAND_SVG;
+    h.style.left = (10 + Math.random()*70) + '%';
+    h.style.top = (8 + Math.random()*60) + '%';
+    h.style.transform = 'rotate(' + Math.round((Math.random()-0.5)*80) + 'deg)' + (Math.random() < 0.5 ? ' scaleX(-1)' : '');
+    h.style.animationDelay = (i*0.12) + 's';
+    box.appendChild(h);
+  }
+  thump(0.18);
+  setTimeout(()=>{ const g = actx && pickSound('giggle'); if(g) playBuffer(g, masterGain, 0.35, 1.15, 0.4); }, 300);
+  setTimeout(()=>{ box.innerHTML = ''; }, 2400);
+  return true;
+}
+// a small dark figure darts across the corridor a few metres ahead, with quick little footsteps
+const shadowRunner = new THREE.Group();
+shadowRunner.visible = false;
+scene.add(shadowRunner);
+let shadowRun = null;
+function runningShadow(t){
+  const n = pickDoll();
+  if(!n || !actx) return false;
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw), dist = 3.5 + Math.random();
+  const cx = player.x + fx*dist, cz = player.z + fz*dist;
+  if(!segmentClear(player.x, player.z, cx, cz)) return false;
+  if(shadowRunner.userData.name !== n){
+    if(shadowRunner.userData.card) shadowRunner.remove(shadowRunner.userData.card);
+    const card = makeBillboard(n, 1.25);
+    // darkened, but still lit by the flashlight so you catch its shape as it crosses the beam
+    card.material = new THREE.MeshLambertMaterial({map:spriteTex[n], transparent:true, alphaTest:0.35, side:THREE.DoubleSide, color:0x6a4848});
+    shadowRunner.add(card);
+    shadowRunner.userData = {name:n, card};
+  }
+  const rx = Math.cos(yaw), rz = -Math.sin(yaw), dir = Math.random() < 0.5 ? 1 : -1;
+  shadowRun = {t0:t, dur:0.5, x0:cx - rx*1.7*dir, z0:cz - rz*1.7*dir, x1:cx + rx*1.7*dir, z1:cz + rz*1.7*dir};
+  shadowRunner.visible = true;
+  const step = pickSound('step');
+  for(let i=0;i<4;i++){
+    if(!step) break;
+    const pan = Math.max(-1, Math.min(1, (-1 + i*0.66) * dir));
+    let dest = masterGain;
+    if(actx.createStereoPanner){ const p = actx.createStereoPanner(); p.pan.value = pan; p.connect(masterGain); dest = p; }
+    playBuffer(step, dest, 0.35, 1.8, 0.2, i*0.12);
+  }
+  return true;
+}
+function animateShadowRunner(t){
+  if(!shadowRun) return;
+  const k = (t - shadowRun.t0) / shadowRun.dur;
+  if(k >= 1 || k < 0){ shadowRunner.visible = false; shadowRun = null; return; }
+  shadowRunner.position.set(shadowRun.x0 + (shadowRun.x1-shadowRun.x0)*k, Math.abs(Math.sin(k*Math.PI*4))*0.08, shadowRun.z0 + (shadowRun.z1-shadowRun.z0)*k);
+  shadowRunner.rotation.y = Math.atan2(camera.position.x - shadowRunner.position.x, camera.position.z - shadowRunner.position.z);
+}
+// the nearest ceiling lamp flares white and dies with an electric pop, then stays dark a while
+function lampBurst(t){
+  let best = null, bd = CELL*2.5;
+  for(const f of lightFixtures){
+    if(f.dead || (f.deadUntil && t < f.deadUntil)) continue;
+    const d = Math.hypot(f.x-player.x, f.z-player.z);
+    if(d < bd){ bd = d; best = f; }
+  }
+  if(!best) return false;
+  scareLight.color.setHex(0xddeeff);
+  scareLight.position.set(best.x, WALL_H-0.4, best.z);
+  scareLight.intensity = 5;
+  setTimeout(()=>{ scareLight.intensity = 1.5; }, 60);
+  setTimeout(()=>{ scareLight.intensity = 0; }, 140);
+  best.deadUntil = performance.now()/1000 + 8;
+  flashStatic();
+  const pop = actx && pickSound('speaker');
+  if(pop) playBuffer(pop, masterGain, 0.55, 1.5, 0.3);
+  else if(actx) thump(0.2);
+  return true;
+}
+// the flashlight stutters for a moment while something giggles far away
+function flashlightStutter(t){
+  if(battery <= 0) return false;
+  stutterUntil = t + 1.6;
+  const g = actx && pickSound('giggle');
+  if(g){
+    const ang = Math.random()*Math.PI*2;
+    const s = spatialize(player.x + Math.cos(ang)*CELL*3, player.z + Math.sin(ang)*CELL*3, CELL*5);
+    playBuffer(g, spatialOut(s.pan, true), 0.5, 0.9, 0.3);
+  }
+  return true;
+}
+
 function cabinetScare(){
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
   let best = null, bestD = CELL*2.4;
@@ -2850,6 +2992,7 @@ function cabinetScare(){
   if(!best || !actx) return false;
   const scr = best.userData.screen, orig = scr.material;
   scr.material = scareScreenMat;
+  scareLight.color.setHex(0xff3040);
   scareLight.position.set(best.position.x, 1.3, best.position.z);
   let n = 0;
   const flick = setInterval(()=>{ scareLight.intensity = (n++ % 2) ? 0.4 : 3; }, 90);
@@ -3241,6 +3384,7 @@ function render(){
     flashlight.distance = 6 + 9*Math.min(1, charge*1.5);
   }
   if(t < blackoutUntil) flashlight.intensity = 0; // the doll-reveal blackout
+  else if(t < stutterUntil && Math.random() < 0.55) flashlight.intensity *= 0.05; // flashlight stutter scare
   // the room's ambient glow fades with the battery too, so an empty one really means darkness
   const amb = Math.min(1, battery/40) * (t < blackoutUntil ? 0.2 : 1);
   ambient.intensity = 0.08 + 0.24*amb;
@@ -3292,6 +3436,7 @@ function render(){
   }
 
   animateMascots(t);
+  animateShadowRunner(t);
   updateSprites(t);
   drawMinimap();
   renderer.render(scene, camera);
