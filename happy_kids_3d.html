@@ -49,7 +49,18 @@
   #stage{position:fixed;inset:0;}
   #stage canvas{display:block;}
 
-  #vignette{position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 16vw 3vw #000;mix-blend-mode:multiply;z-index:8;}
+  /* full-screen jumpscare: the monster's face lunges at the camera */
+  #jumpscare{position:fixed;inset:0;z-index:36;pointer-events:none;background:#000;overflow:hidden;}
+  #jumpscare .face{position:absolute;inset:-10%;background-repeat:no-repeat;background-color:#120000;
+    filter:contrast(1.5) saturate(1.3) brightness(1.15);animation:jsLunge .9s cubic-bezier(.2,.8,.2,1) forwards, jsShake .07s steps(2) infinite;}
+  #jumpscare.short .face{animation:jsLunge .45s cubic-bezier(.2,.8,.2,1) forwards, jsShake .06s steps(2) infinite;}
+  #jumpscare .noise{position:absolute;inset:0;mix-blend-mode:screen;opacity:.35;
+    background:repeating-linear-gradient(0deg,rgba(255,255,255,.25) 0 1px,transparent 1px 3px), radial-gradient(ellipse at center, transparent 30%, rgba(160,0,0,.75) 100%);
+    animation:jsFlicker .09s steps(2) infinite;}
+  @keyframes jsLunge{0%{transform:scale(.55);opacity:.2;}18%{transform:scale(1.15);opacity:1;}100%{transform:scale(1.45);opacity:1;}}
+  @keyframes jsShake{0%{translate:-1.5% 1%;}50%{translate:1.5% -1.2%;}100%{translate:-.8% -.6%;}}
+  @keyframes jsFlicker{0%{opacity:.25;}50%{opacity:.5;}100%{opacity:.3;}}
+  #vignette{position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 22vw 6vw #000;mix-blend-mode:multiply;z-index:8;}
   #danger{position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 12vw 4vw rgba(180,0,0,0);z-index:9;transition:box-shadow .35s;}
   #grain{
     position:fixed;inset:0;pointer-events:none;opacity:.045;z-index:8;
@@ -254,6 +265,7 @@
 <div id="buzz"></div>
 <div id="staticFlash"></div>
 <div id="lookzone"></div>
+<div id="jumpscare" class="hidden"><div class="face"></div><div class="noise"></div></div>
 
 <div id="hud" class="hidden">
   <div id="rec"><span class="dot"></span>REC &nbsp;<span id="tstamp">00:00</span><div id="floorLbl">PATRO 1</div></div>
@@ -1010,7 +1022,7 @@ function drawEcg(){
 /* ================= THREE.JS SETUP ================= */
 let W=window.innerWidth, H=window.innerHeight;
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x07040f, 2, 17);
+scene.fog = new THREE.Fog(0x040209, 1.5, 13); // the dark swallows anything past ~13 m
 const camera = new THREE.PerspectiveCamera(75, W/H, 0.1, 40);
 camera.rotation.order = 'YXZ';
 const renderer = new THREE.WebGLRenderer({antialias:true});
@@ -1019,7 +1031,7 @@ let isTouch = window.matchMedia('(pointer: coarse)').matches ||
   (navigator.maxTouchPoints > 0 && !window.matchMedia('(any-pointer: fine)').matches);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouch ? 1.5 : 2));
 renderer.setSize(W,H);
-renderer.setClearColor(0x07040f);
+renderer.setClearColor(0x040209);
 document.getElementById('stage').appendChild(renderer.domElement);
 
 function onResize(){
@@ -1113,7 +1125,8 @@ scene.add(ambient);
 const hemi = new THREE.HemisphereLight(0x5a3aa0, 0x05020c, 0.3);
 scene.add(hemi);
 
-const flashlight = new THREE.SpotLight(0xfff2c0, 1.3, 15, THREE.MathUtils.degToRad(28), 0.55, 1.7);
+// a narrower, softer-edged beam: what it doesn't hit stays dark
+const flashlight = new THREE.SpotLight(0xfff2c0, 1.3, 15, THREE.MathUtils.degToRad(25), 0.7, 1.7);
 const flashTarget = new THREE.Object3D();
 scene.add(flashlight, flashTarget);
 flashlight.target = flashTarget;
@@ -2164,6 +2177,53 @@ function lowBatteryBeep(){
 }
 
 let kidScareUsed = false;
+/* ---- jumpscares: the monster's face fills the screen ---- */
+// how to frame each painted sprite so its face fills the screen: [background-size, background-position]
+const JS_FACE = {steve:['auto 380%','50% 2%'], hopsik:['auto 300%','50% 16%'], doll1:['auto 300%','50% 17%'], doll2:['auto 300%','50% 17%']};
+function showJumpscare(name, short){
+  const el = document.getElementById('jumpscare'), face = el.querySelector('.face');
+  const f = JS_FACE[name] || JS_FACE.doll1;
+  face.style.backgroundImage = spriteTex[name] ? 'url(sprites/'+name+'.png)' : 'none';
+  face.style.backgroundSize = f[0];
+  face.style.backgroundPosition = f[1];
+  el.classList.toggle('short', !!short);
+  el.classList.remove('hidden');
+  face.style.animation = 'none'; void face.offsetWidth; face.style.animation = ''; // restart the lunge
+  if(short) setTimeout(()=> el.classList.add('hidden'), 450);
+}
+function jumpscareHit(cause){
+  if(!actx) return;
+  const t = actx.currentTime;
+  // a burst of harsh noise and a low boom under the monster's own sound
+  const len = Math.floor(actx.sampleRate*0.6), buf = actx.createBuffer(1, len, actx.sampleRate), d = buf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/len, 2);
+  const n = actx.createBufferSource(); n.buffer = buf;
+  const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 700;
+  const ng = actx.createGain(); ng.gain.value = 0.45;
+  n.connect(hp); hp.connect(ng); ng.connect(masterGain); ng.connect(reverb); n.start(t);
+  const o = actx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(70, t); o.frequency.exponentialRampToValueAtTime(24, t+0.5);
+  const og = actx.createGain(); og.gain.setValueAtTime(0.7, t); og.gain.exponentialRampToValueAtTime(0.001, t+0.7);
+  o.connect(og); og.connect(masterGain); o.start(t); o.stop(t+0.75);
+  const rec = cause === 'kids' ? pickSound('shriek') : cause === 'steve' ? pickSound('growl') : pickSound('squeak');
+  if(rec) playBuffer(rec, masterGain, 1.0, cause === 'steve' ? 0.85 : 1.1, 0.5);
+}
+// being caught: freeze the game, the monster lunges at the screen, then the end screen
+let catching = false;
+function caught(cause, doll){
+  if(catching || gameEnded) return;
+  catching = true; running = false;
+  if(isLocked()) document.exitPointerLock();
+  showJumpscare(cause === 'steve' ? 'steve' : cause === 'mascot' ? 'hopsik' : (doll || 'doll1'), false);
+  jumpscareHit(cause);
+  haptic([400,60,300]);
+  setTimeout(()=>{
+    document.getElementById('jumpscare').classList.add('hidden');
+    catching = false;
+    endGame(false, cause === 'steve' ? undefined : cause);
+  }, 950);
+}
+
 function kidScare(k){
   kidScareUsed = true;
   scene.remove(k.group);
@@ -2174,6 +2234,7 @@ function kidScare(k){
   flashStatic();
   haptic([200,100,200]);
   shriek();
+  showJumpscare(k.group.userData.doll || 'doll1', true);
   setTimeout(()=>{ if(!gameEnded) showSubtitle('Vidíme tě…'); }, 550);
   const buzz = document.getElementById('buzz');
   buzz.style.opacity = 0.85;
@@ -2315,14 +2376,14 @@ function step(dt,t){
   advanceKids(dt,t);
   for(const k of kids){
     if(Math.hypot(player.x-k.x, player.z-k.z) < PR+0.4){
-      if(kidScareUsed){ endGame(false,'kids'); break; }
+      if(kidScareUsed){ caught('kids', k.group.userData.doll); return; }
       kidScare(k);
       break;
     }
   }
   advanceMascots(dt,t);
   for(const m of mascots){
-    if(Math.hypot(player.x-m.x, player.z-m.z) < PR+0.5){ endGame(false,'mascot'); break; }
+    if(Math.hypot(player.x-m.x, player.z-m.z) < PR+0.5){ caught('mascot'); return; }
   }
   checkNotes();
   updateScares(dt,t);
@@ -2384,7 +2445,7 @@ function step(dt,t){
   danger.style.boxShadow = dangerAmt>0.01 ? `inset 0 0 ${8+dangerAmt*20}vw ${2+dangerAmt*6}vw rgba(180,0,0,${dangerAmt})` : 'inset 0 0 12vw 4vw rgba(180,0,0,0)';
   setMusicTension(dangerAmt);
 
-  if(dist < PR+0.45) endGame(false);
+  if(dist < PR+0.45){ caught('steve'); return; }
   const [pr,pc] = cellAt(player.x,player.z);
   if(pr===exitCell[0] && pc===exitCell[1]){
     if(!exitLocked) endGame(true);
@@ -2719,13 +2780,15 @@ function resetScares(){
   scareT = 25 + Math.random()*20;
   scareLight.intensity = 0;
   phantom.visible = false;
+  ghostDoll.visible = false;
+  blackoutUntil = 0;
 }
 function updateScares(dt, t){
   if(steve.hunting) return;
   scareT -= dt;
   if(scareT > 0) return;
   scareT = 35 + Math.random()*40;
-  const kinds = [cabinetScare, speakerLaugh, phantomSteve].sort(()=> Math.random()-0.5);
+  const kinds = [cabinetScare, speakerLaugh, phantomSteve, dollReveal].sort(()=> Math.random()-0.5);
   for(const k of kinds) if(k(t)) return;
 }
 function arcadeJingle(pan, muffled){
@@ -2738,6 +2801,42 @@ function arcadeJingle(pan, muffled){
     o.connect(g); g.connect(out); g.connect(reverb);
     o.start(t); o.stop(t+0.15);
   });
+}
+// blackout: every light dies for a second — and when the flashlight comes back,
+// a doll is standing right in front of you, then it's gone
+let blackoutUntil = 0;
+const ghostDoll = new THREE.Group();
+ghostDoll.visible = false;
+scene.add(ghostDoll);
+function dollReveal(t){
+  const n = pickDoll();
+  if(!n) return false;
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+  const x = player.x + fx*2.4, z = player.z + fz*2.4;
+  if(!segmentClear(player.x, player.z, x, z)) return false;
+  if(ghostDoll.userData.name !== n){
+    if(ghostDoll.userData.card) ghostDoll.remove(ghostDoll.userData.card);
+    const card = makeBillboard(n, 1.3);
+    card.material = new THREE.MeshBasicMaterial({map:spriteTex[n], transparent:true, alphaTest:0.35, side:THREE.DoubleSide});
+    ghostDoll.add(card);
+    ghostDoll.userData = {name:n, card};
+  }
+  ghostDoll.position.set(x, 0, z);
+  ghostDoll.rotation.y = Math.atan2(player.x - x, player.z - z);
+  lightsOutUntil = blackoutUntil = t + 1.1;
+  const buzzEl = document.getElementById('buzz');
+  buzzEl.style.opacity = 0.6;
+  setTimeout(()=>{
+    buzzEl.style.opacity = 0;
+    if(!running || gameEnded) return;
+    ghostDoll.visible = true;
+    flashStatic();
+    const sh = pickSound('shriek') || pickSound('whisper');
+    if(sh && actx) playBuffer(sh, masterGain, 0.9, 1, 0.4); else stinger();
+    haptic([120,40,120]);
+  }, 1100);
+  setTimeout(()=>{ ghostDoll.visible = false; }, 1500);
+  return true;
 }
 function cabinetScare(){
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
@@ -2895,7 +2994,7 @@ function pickDoll(){
   const have = ['doll1','doll2'].filter(n=> spriteTex[n]);
   return have.length ? have[Math.floor(Math.random()*have.length)] : null;
 }
-function spriteKid(g){ const n = pickDoll(); if(n) applySprite(g, n, 1.3); }
+function spriteKid(g){ const n = pickDoll(); if(n && applySprite(g, n, 1.3)) g.userData.doll = n; }
 function spriteMascot(g){ applySprite(g, 'hopsik', 2.35); }
 function onSpriteLoaded(n){
   if(n === 'steve'){
@@ -2957,7 +3056,7 @@ function applyWallTexture(mat){
   if(!wallGlowMap) wallGlowMap = makeGlowMap(gameTex.wall.image);
   mat.map = gameTex.wall;
   mat.emissiveMap = wallGlowMap;
-  mat.emissiveIntensity = wallGlowMap ? 1.1 : 0;
+  mat.emissiveIntensity = wallGlowMap ? 0.75 : 0;
   mat.needsUpdate = true;
 }
 function onTextureLoaded(n){
@@ -3109,10 +3208,11 @@ function render(){
     flashlight.intensity = (1.15 + 0.15*Math.sin(t*14) + (Math.random()<0.01? -0.6:0)) * battFactor * sputter;
     flashlight.distance = 6 + 9*Math.min(1, charge*1.5);
   }
+  if(t < blackoutUntil) flashlight.intensity = 0; // the doll-reveal blackout
   // the room's ambient glow fades with the battery too, so an empty one really means darkness
-  const amb = Math.min(1, battery/40);
-  ambient.intensity = 0.16 + 0.39*amb;
-  hemi.intensity = 0.08 + 0.22*amb;
+  const amb = Math.min(1, battery/40) * (t < blackoutUntil ? 0.2 : 1);
+  ambient.intensity = 0.08 + 0.24*amb;
+  hemi.intensity = 0.04 + 0.12*amb;
 
   for(const b of batteries.concat(tokens)){
     if(b.taken) continue;
@@ -3123,7 +3223,7 @@ function render(){
 
   assignFixtureLights(t);
   for(const l of fixtureLights){
-    l.intensity = l.userData.fixture ? 1.5 * fixtureIntensity(l.userData.fixture, t) : 0;
+    l.intensity = l.userData.fixture ? 1.05 * fixtureIntensity(l.userData.fixture, t) : 0;
     if(t < lightsOutUntil) l.intensity *= 0.08; // the loudspeaker scare browns out the lights
   }
 
