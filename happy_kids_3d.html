@@ -911,12 +911,13 @@ function hasCzechVoice(){
    local file:// page) falls back to the synthesized sound. */
 const SOUND_GROUPS = {
   giggle: ['giggle1','giggle2','giggle3','giggle4','kids_hihi'],
-  whisper: ['kids_kdejsi','kids_vidime'],
+  whisper: ['kids_kdejsi','kids_vidime','kids_zatebou'],
   step: ['step1','step2','step3'],
   growl: ['growl'], shriek: ['shriek'],
   cabinet: ['cabinet_glitch'], speaker: ['speaker_crackle'], phantom: ['phantom_sting'],
   hopsikStep: ['hopsik_step1','hopsik_step2'], squeak: ['hopsik_squeak'], hopsikCatch: ['hopsik_catch'],
-  paper: ['note_paper']
+  paper: ['note_paper'],
+  handSlap: ['hand_slap'], kidRun: ['kid_run'], lampPop: ['lamp_pop'], flicker: ['flashlight_flicker']
 };
 // spoken lines → file
 const VOICE_LINES = {
@@ -925,7 +926,8 @@ const VOICE_LINES = {
 };
 // longest useful length per sound (s): generated files carry silence and extra hits
 const SOUND_MAXLEN = {step:0.55, giggle:3.2, whisper:2.5, growl:2.8, shriek:1.6,
-  cabinet:2.2, speaker:1.6, phantom:2, hopsikStep:0.6, squeak:1.2, hopsikCatch:3.5, paper:1.4};
+  cabinet:2.2, speaker:1.6, phantom:2, hopsikStep:0.6, squeak:1.2, hopsikCatch:3.5, paper:1.4,
+  handSlap:1.0, kidRun:2.0, lampPop:2.0, flicker:2.0};
 const soundNames = [...new Set(Object.values(SOUND_GROUPS).flat().concat(Object.values(VOICE_LINES)))];
 const soundData = {}, sounds = {};
 for(const n of soundNames){
@@ -2902,8 +2904,11 @@ function handprints(){
     h.style.animationDelay = (i*0.12) + 's';
     box.appendChild(h);
   }
-  thump(0.18);
-  setTimeout(()=>{ const g = actx && pickSound('giggle'); if(g) playBuffer(g, masterGain, 0.35, 1.15, 0.4); }, 300);
+  // one slap per hand, in step with their staggered appearance
+  const slap = actx && pickSound('handSlap');
+  if(slap) for(let i=0;i<n;i++) playBuffer(slap, masterGain, 0.7, 0.95 + Math.random()*0.15, 0.2, i*0.12);
+  else thump(0.18);
+  setTimeout(()=>{ const g = actx && pickSound('giggle'); if(g) playBuffer(g, masterGain, 0.35, 1.15, 0.4); }, 300 + n*120);
   setTimeout(()=>{ box.innerHTML = ''; }, 2400);
   return true;
 }
@@ -2929,6 +2934,18 @@ function runningShadow(t){
   const rx = Math.cos(yaw), rz = -Math.sin(yaw), dir = Math.random() < 0.5 ? 1 : -1;
   shadowRun = {t0:t, dur:0.5, x0:cx - rx*1.7*dir, z0:cz - rz*1.7*dir, x1:cx + rx*1.7*dir, z1:cz + rz*1.7*dir};
   shadowRunner.visible = true;
+  // light running patter that sweeps across, following the figure
+  const run = pickSound('kidRun');
+  if(run){
+    const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3000;
+    if(actx.createStereoPanner){
+      const p = actx.createStereoPanner(), t0 = actx.currentTime;
+      p.pan.setValueAtTime(-0.9*dir, t0); p.pan.linearRampToValueAtTime(0.9*dir, t0 + 0.6);
+      lp.connect(p); p.connect(masterGain);
+    } else lp.connect(masterGain);
+    playBuffer(run, lp, 0.6, 1.1, 0.2);
+    return true;
+  }
   const step = pickSound('step');
   for(let i=0;i<4;i++){
     if(!step) break;
@@ -2962,15 +2979,19 @@ function lampBurst(t){
   setTimeout(()=>{ scareLight.intensity = 0; }, 140);
   best.deadUntil = performance.now()/1000 + 8;
   flashStatic();
-  const pop = actx && pickSound('speaker');
-  if(pop) playBuffer(pop, masterGain, 0.55, 1.5, 0.3);
+  const own = actx && pickSound('lampPop'), pop = actx && pickSound('speaker');
+  if(own) playBuffer(own, masterGain, 0.75, 1, 0.35);
+  else if(pop) playBuffer(pop, masterGain, 0.55, 1.5, 0.3);
   else if(actx) thump(0.2);
   return true;
 }
 // the flashlight stutters for a moment while something giggles far away
 function flashlightStutter(t){
   if(battery <= 0) return false;
-  stutterUntil = t + 1.6;
+  // the flicker lasts as long as the clicking/buzzing sound, when there is one
+  const fl = actx && pickSound('flicker');
+  if(fl) playBuffer(fl, masterGain, 0.6, 1);
+  stutterUntil = t + (fl ? Math.max(1.2, fl.duration) : 1.6);
   const g = actx && pickSound('giggle');
   if(g){
     const ang = Math.random()*Math.PI*2;

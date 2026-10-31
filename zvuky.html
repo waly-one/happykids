@@ -39,6 +39,8 @@ Nejlépe se sluchátky.</p>
 <div class="grid" id="voices"></div>
 <h2>Lekačka</h2>
 <div class="grid" id="scare"></div>
+<h2>Lehké lekačky</h2>
+<div class="grid" id="minor"></div>
 
 <div id="summary">Zatím nic neoznačeno.</div>
 
@@ -48,7 +50,9 @@ Nejlépe se sluchátky.</p>
 const GROUPS = {
   giggles: [['giggle1','chichot, krátký'],['giggle2','chichot, krátký'],['giggle3','chichot, dlouhý'],['giggle4','chichot, dlouhý'],['kids_hihi','„hihi… hihi“']],
   voices: [['kids_kdejsi','„Kde jsi?“ – šepot zblízka'],['kids_vidime','„Vidíme tě…“ – při vyděšení'],['kids_pojd','„Pojď si s námi hrát.“ – když tě chytí']],
-  scare: [['shriek','výkřik při vyděšení']]
+  scare: [['shriek','výkřik při vyděšení']],
+  minor: [['kids_zatebou','„Jsem za tebou.“ – šepot za zády'],['hand_slap','plácnutí dlaní – otisky na obrazovce'],['kid_run','běžící kroky – přebíhající stín'],
+          ['lamp_pop','prasknutí zářivky – lampa'],['flashlight_flicker','cvakání a bzučení – baterka']]
 };
 let ctx = null, reverb = null;
 const buffers = {}, raw = {};
@@ -73,7 +77,7 @@ function trim(buf, maxSec){
     for(let i=0;i<fade;i++) o[end-start-1-i] *= i/fade; }
   return out;
 }
-const MAXLEN = {giggles:3.2, voices:2.5, scare:1.6};
+const MAXLEN = {giggles:3.2, voices:2.5, scare:1.6, minor:2.5};
 function play(name, mode){
   if(!ctx || !buffers[name]) return;
   const src = ctx.createBufferSource();
