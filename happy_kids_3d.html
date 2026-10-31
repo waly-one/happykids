@@ -84,6 +84,8 @@
   #battery .icon{width:34px;height:16px;border:2px solid #cbbf90;border-radius:2px;position:relative;padding:2px;}
   #battery .icon:after{content:'';position:absolute;right:-5px;top:4px;width:3px;height:6px;background:#cbbf90;}
   #battery .fill{height:100%;background:var(--yellow-bright);width:100%;transition:width .3s;}
+  #battery.low{animation:battBlink .8s steps(1) infinite;color:var(--red);}
+  @keyframes battBlink{0%,60%{opacity:1;}61%,100%{opacity:.35;}}
 
   #objective{
     position:absolute;top:60px;left:18px;
@@ -284,7 +286,8 @@
     <b>„Vidím tě.“</b><br><br>
     <span class="only-desktop">Pohyb: <b>WASD</b> / šipky, <b>Shift</b> = sprint (Steve ho uslyší), <b>C</b> = přikrčit se. Rozhlížení: <b>myší</b> (klikni do hry, Esc uvolní kurzor).</span>
     <span class="only-touch">Ovládání: <b>levý palec</b> = chůze, <b>pravý palec</b> = rozhlížení, tlačítka vpravo dole = <b>sprint</b> (Steve ho uslyší) a <b>přikrčení</b>. Hraj na šířku.</span>
-    Východ je zamčený — sesbírej <b>3 žetony</b> schované ve slepých uličkách. Baterka se vybíjí, sbírej svítící <b>baterie</b>.
+    Východ je zamčený — sesbírej <b>3 žetony</b> schované ve slepých uličkách. Baterka vydrží jen chvíli — sbírej svítící <b>baterie</b>, jinak se ponoříš do <b>úplné tmy</b>, kde jsou děti odvážnější.
+    Když tě něco uvidí, utíkej a zahni za roh — sprintem utečeš každému, jen ne napořád.
     Přikrčený u automatu jsi <b>schovaný</b> a Steve tě nevidí. Poslouchej jeho kroky — a hihňání dětí.
     Každý útěk tě zavede o <b>patro níž</b>: větší bludiště, rychlejší Steve, víc dětí.
     První dítě, které tě na patře chytí, tě jen vyděsí — druhé už ne.<span class="only-desktop"> <b>P / Esc</b> = pauza.</span>
@@ -1386,7 +1389,9 @@ function buildKids(){
 }
 
 /* ================= PICKUPS: BATTERIES & TOKENS ================= */
-const BATTERY_CHARGE = 45, TOKEN_COUNT = 3;
+// a full flashlight lasts ~1.5–2 minutes of walking, so collecting batteries is part of every floor
+const BATTERY_CHARGE = 30, TOKEN_COUNT = 3;
+const BATTERY_DRAIN = {idle:0.5, walk:0.9, sprint:1.3}; // % per second
 const battGeo = {
   body: new THREE.CylinderGeometry(0.09,0.09,0.32,12),
   cap:  new THREE.CylinderGeometry(0.045,0.045,0.05,8),
@@ -1471,7 +1476,7 @@ function buildPickups(){
   }
   for(const [r,c] of tCells) avoid.add(r*COLS+c);
   tokens = tCells.map(([r,c])=> makePickup(r,c,'token'));
-  batteries = pickItemCells(levelCfg.batteries, 5, 6, avoid, false).map(([r,c])=> makePickup(r,c,'battery'));
+  batteries = pickItemCells(levelCfg.batteries, 3, 4, avoid, false).map(([r,c])=> makePickup(r,c,'battery'));
   tokensFound = 0;
   tokensNeeded = tokens.length;
   tokenLights.forEach((l,i)=>{
@@ -1809,10 +1814,12 @@ let crouching = false, playerHidden = false, eyeH = EYE_H, playerMoving = false;
 let bobPhase = 0;
 let subtitleTimeout = null;
 
+// walk 2.6 m/s, sprint 4.3 m/s: Steve is faster than a walk but slower than a sprint,
+// kids roughly match your walk — you can always get away by running and breaking line of sight
 const DIFFICULTIES = {
-  easy:   { wander: 1.7, hunt: 2.9, loseSightAfter: 5, kid: 2.1 },
-  medium: { wander: 2.0, hunt: 3.6, loseSightAfter: 6, kid: 3.0 },
-  hard:   { wander: 2.3, hunt: 4.4, loseSightAfter: 8, kid: 3.9 }
+  easy:   { wander: 1.6, hunt: 2.8, loseSightAfter: 4, kid: 2.2 },
+  medium: { wander: 1.9, hunt: 3.2, loseSightAfter: 5, kid: 2.8 },
+  hard:   { wander: 2.2, hunt: 3.6, loseSightAfter: 7, kid: 3.2 }
 };
 let difficulty = 'medium';
 
@@ -1822,7 +1829,8 @@ function levelConfig(n){
     size: Math.min(28, 15 + (n-1)*3),
     speedMul: Math.min(1.3, 1 + 0.07*(n-1)),
     kidGroups: Math.min(12, 4 + n),
-    batteries: Math.min(7, 3 + n)
+    // about one battery per 28 cells: 8 on the first floor, up to 18 deep down
+    batteries: Math.min(18, Math.round(Math.pow(Math.min(28, 15 + (n-1)*3), 2) / 28))
   };
 }
 let level = 1, levelCfg = levelConfig(1), runTime = 0;
@@ -1862,6 +1870,51 @@ document.querySelectorAll('.diffbtn').forEach(btn=>{
 });
 updateBestLabel();
 
+/* ---- shared path following for Steve, the kids and Hopsík ----
+   An agent walks to the centre of `a.cell` and only then moves on to the next
+   cell in `a.path`. Re-planning always starts from `a.cell`, so nobody cuts
+   across a wall corner or flips back and forth on a cell border. */
+function routeTo(a, tr, tc){
+  const p = bfsPath(a.cell[0], a.cell[1], tr, tc);
+  p.shift(); // first entry is a.cell itself
+  a.path = p;
+}
+function cellGoal(a){
+  const c = cellCenter(a.cell[0], a.cell[1]);
+  return a.off ? {x:c.x + a.off.x, z:c.z + a.off.z} : c;
+}
+function atCellGoal(a){
+  const g = cellGoal(a);
+  return Math.hypot(g.x-a.x, g.z-a.z) < 0.06;
+}
+// returns true while the agent is still walking
+function walkPath(a, sp, dt){
+  let g = cellGoal(a), dx = g.x-a.x, dz = g.z-a.z, d = Math.hypot(dx,dz);
+  if(d < 0.06){
+    if(!a.path.length) return false;
+    a.cell = a.path.shift();
+    g = cellGoal(a); dx = g.x-a.x; dz = g.z-a.z; d = Math.hypot(dx,dz);
+    if(d < 0.001) return true;
+  }
+  const s = Math.min(d, sp*dt);
+  a.x += dx/d*s; a.z += dz/d*s;
+  a.heading = Math.atan2(dx, dz);
+  return true;
+}
+// inside the same cell there are no walls in between: close the last metres directly
+function walkDirect(a, x, z, sp, dt){
+  const dx = x-a.x, dz = z-a.z, d = Math.hypot(dx,dz);
+  if(d < 0.01) return false;
+  const s = Math.min(d, sp*dt);
+  a.x += dx/d*s; a.z += dz/d*s;
+  a.heading = Math.atan2(dx, dz);
+  return true;
+}
+function sameCell(a, x, z){
+  const [r,c] = cellAt(x, z), [ar,ac] = cellAt(a.x, a.z);
+  return r === ar && c === ac && r === a.cell[0] && c === a.cell[1];
+}
+
 function pickPatrolTarget(t){
   // Steve always walks toward a random destination somewhere in the maze —
   // this is what makes him actually roam the whole map instead of loitering
@@ -1873,14 +1926,7 @@ function pickPatrolTarget(t){
     tc = Math.floor(Math.random()*COLS);
     tries++;
   } while(tries<10 && (Math.abs(tr-steve.cell[0])+Math.abs(tc-steve.cell[1])) < minDist);
-  steve.path = bfsPath(steve.cell[0], steve.cell[1], tr, tc);
-  if(steve.path.length>1) steve.path.shift();
-  if(steve.path.length){
-    steve.target = cellCenter(steve.path[0][0], steve.path[0][1]);
-  } else {
-    steve.path = [];
-    steve.target = null;
-  }
+  routeTo(steve, tr, tc);
   steve.pauseUntil = 0;
 }
 
@@ -1943,7 +1989,8 @@ function newGame(floor){
   const diff = DIFFICULTIES[difficulty] || DIFFICULTIES.medium;
   steve = {
     x: sc.x, z: sc.z, cell:[sr, sc0],
-    target:null, wanderSpeed:diff.wander*levelCfg.speedMul, huntSpeed:diff.hunt*levelCfg.speedMul, loseSightAfter:diff.loseSightAfter,
+    // Steve's chase speed never reaches your sprint (4.3 m/s): breaking line of sight is always possible
+    wanderSpeed:diff.wander*levelCfg.speedMul, huntSpeed:Math.min(3.9, diff.hunt*levelCfg.speedMul), loseSightAfter:diff.loseSightAfter, heading:0,
     hunting:false, lastSeen:0, lastLineTime:-99, lastRepath:0, path:[], prevCell:null, pauseUntil:0,
     moving:false, stepTimer:0, lastHeard:-99, lastKnown:null
   };
@@ -1969,41 +2016,9 @@ function newGame(floor){
 }
 
 function advanceSteve(dt,t){
-  steve.moving = false;
-  if(!steve.hunting && (!steve.path || !steve.path.length) && !steve.target && t > (steve.pauseUntil||0)){
-    pickPatrolTarget(t);
-  }
-  const dest = steve.target;
-  if(dest){
-    const dx = dest.x-steve.x, dz = dest.z-steve.z;
-    const d = Math.hypot(dx,dz);
-    const spd = steve.hunting ? steve.huntSpeed : steve.wanderSpeed;
-    if(d < 0.12){
-      if(steve.path && steve.path.length){
-        steve.path.shift();
-        if(steve.path.length){
-          const nc = steve.path[0];
-          steve.prevCell = steve.cell;
-          steve.cell = nc;
-          steve.target = cellCenter(nc[0],nc[1]);
-        } else {
-          steve.target = null;
-          if(!steve.hunting) steve.pauseUntil = t + 1 + Math.random()*2; // brief look-around pause
-        }
-      } else {
-        steve.target = null;
-      }
-    } else {
-      steve.x += (dx/d)*spd*dt;
-      steve.z += (dz/d)*spd*dt;
-      steve.moving = true;
-      steveGroup.rotation.y = Math.atan2(dx,dz);
-    }
-  }
-
-  const ps = simPlayers();
+  // --- what he sees ---
   let target = null, bestD = 1e9;
-  for(const p of ps){
+  for(const p of simPlayers()){
     const dd = Math.hypot(steve.x-p.x, steve.z-p.z);
     // crouching behind an arcade cabinet hides you — unless Steve is right on top of you
     if(dd < CELL*7 && dd < bestD && hasLineOfSight(steve, p) && (!p.hidden || dd < 1.3)){ bestD = dd; target = p; }
@@ -2013,25 +2028,27 @@ function advanceSteve(dt,t){
     if(!steve.hunting){ steve.hunting = true; onSighted(target, t); }
     else if(t-steve.lastLineTime > 5) onSighted(target, t);
     steve.lastKnown = cellAt(target.x,target.z);
-    if(t - steve.lastRepath > 0.5){
-      const [pr,pc] = steve.lastKnown;
-      steve.path = bfsPath(steve.cell[0],steve.cell[1],pr,pc);
-      if(steve.path.length>1) steve.path.shift();
-      steve.lastRepath = t;
-      if(steve.path.length) steve.target = cellCenter(steve.path[0][0], steve.path[0][1]);
-    }
+    if(t - steve.lastRepath > 0.4){ routeTo(steve, steve.lastKnown[0], steve.lastKnown[1]); steve.lastRepath = t; }
   } else if(steve.hunting && t-steve.lastSeen > steve.loseSightAfter){
-    steve.hunting = false; steve.path = []; steve.target = null;
+    steve.hunting = false; steve.path = [];
     steve.pauseUntil = t + 1 + Math.random()*2;
-  } else if(steve.hunting && !steve.target && steve.lastKnown){
-    // lost you: he reached your last known spot, now he checks the corridors around it
-    const [lr,lc] = steve.lastKnown;
-    const sr = Math.max(0, Math.min(ROWS-1, lr + Math.floor(Math.random()*7)-3));
-    const sc = Math.max(0, Math.min(COLS-1, lc + Math.floor(Math.random()*7)-3));
-    steve.path = bfsPath(steve.cell[0], steve.cell[1], sr, sc);
-    if(steve.path.length>1) steve.path.shift(); else steve.path = [];
-    if(steve.path.length) steve.target = cellCenter(steve.path[0][0], steve.path[0][1]);
+  } else if(steve.hunting && !steve.path.length && atCellGoal(steve)){
+    // reached your last known spot without seeing you: he checks the corridors around it
+    const [lr,lc] = steve.lastKnown || steve.cell;
+    routeTo(steve,
+      Math.max(0, Math.min(ROWS-1, lr + Math.floor(Math.random()*7)-3)),
+      Math.max(0, Math.min(COLS-1, lc + Math.floor(Math.random()*7)-3)));
   }
+  // --- patrol: walk to a far random spot, look around a moment, pick the next ---
+  if(!steve.hunting && !steve.path.length && atCellGoal(steve) && t > steve.pauseUntil) pickPatrolTarget(t);
+  // --- movement ---
+  const spd = steve.hunting ? steve.huntSpeed : steve.wanderSpeed;
+  const moved = (target && sameCell(steve, target.x, target.z))
+    ? walkDirect(steve, target.x, target.z, spd, dt)
+    : walkPath(steve, spd, dt);
+  if(!moved && steve.moving && !steve.hunting) steve.pauseUntil = t + 1 + Math.random()*2;
+  steve.moving = moved;
+  if(moved) steveGroup.rotation.y = steve.heading;
 }
 function simPlayers(){
   const list = [];
@@ -2041,45 +2058,61 @@ function simPlayers(){
 function onSighted(p, t){
   triggerSighting(t);
 }
+// How a kid hunts: it has to notice you first (down a straight corridor, or right
+// next to it), then chases your last known spot while you aren't looking at it.
+// If it loses you for KID_MEMORY seconds it gives up and stays where it is.
+const KID_MEMORY = 5;
 function advanceKids(dt,t){
-  // The kids only move while nobody is looking at them. Touch one and it's over.
-  const sp = (DIFFICULTIES[difficulty] || DIFFICULTIES.medium).kid * levelCfg.speedMul;
-  const ps = simPlayers();
+  // in total darkness (dead battery) they get bolder
+  const sp = Math.min(3.6, (DIFFICULTIES[difficulty] || DIFFICULTIES.medium).kid * levelCfg.speedMul) * (battery <= 0 ? 1.25 : 1);
+  const p = simPlayers()[0];
   for(const k of kids){
     k.moving = false;
-    if(!ps.length) continue;
-    let near = null, nd = 1e9, watched = false;
-    for(const p of ps){
-      const kx = p.x-k.x, kz = p.z-k.z, d = Math.hypot(kx,kz);
-      if(d < nd){ nd = d; near = p; }
-      if(d < CELL*6 && d > 0.01){
-        const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
-        const dot = ((-kx)*fx + (-kz)*fz)/d;
-        if(dot > 0.55 && (d < CELL*1.2 || hasLineOfSight(k, p))) watched = true;
-      }
+    if(!p) continue;
+    if(!k.cell){
+      k.cell = cellAt(k.x, k.z); k.path = [];
+      // kids in a group keep their own spot around the cell centre instead of merging into one
+      const c = cellCenter(k.cell[0], k.cell[1]);
+      k.off = {x:Math.max(-0.5, Math.min(0.5, k.x-c.x)), z:Math.max(-0.5, Math.min(0.5, k.z-c.z))};
     }
-    if(nd > CELL*6 || watched) continue;
-    if(t - k.lastRepath > 0.6){
-      const [kr,kc] = cellAt(k.x,k.z);
-      const [pr,pc] = cellAt(near.x,near.z);
-      k.path = bfsPath(kr,kc,pr,pc);
-      if(k.path.length>1) k.path.shift(); else k.path = [];
-      k.lastRepath = t;
+    const kx = p.x-k.x, kz = p.z-k.z, d = Math.hypot(kx,kz);
+    let watched = false;
+    if(d < CELL*6 && d > 0.01){
+      const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
+      if(((-kx)*fx + (-kz)*fz)/d > 0.55 && (d < CELL*1.2 || hasLineOfSight(k, p))) watched = true;
     }
-    const dest = (k.path && k.path.length) ? cellCenter(k.path[0][0], k.path[0][1]) : {x:near.x, z:near.z};
-    const dx = dest.x-k.x, dz = dest.z-k.z, dd = Math.hypot(dx,dz);
-    if(dd < 0.15){
-      if(k.path && k.path.length) k.path.shift();
-    } else {
-      k.x += dx/dd*sp*dt;
-      k.z += dz/dd*sp*dt;
-      k.moving = true;
-    }
+    const sees = d < CELL*1.3 || (d < CELL*5 && hasLineOfSight(k, p));
+    if(sees){ k.alertUntil = t + KID_MEMORY; k.lastKnown = cellAt(p.x, p.z); }
+    if(watched || t > (k.alertUntil || 0)) continue;
+    if(t - (k.lastRepath || 0) > 0.5){ routeTo(k, k.lastKnown[0], k.lastKnown[1]); k.lastRepath = t; }
+    k.moving = (sees && sameCell(k, p.x, p.z)) ? walkDirect(k, p.x, p.z, sp, dt) : walkPath(k, sp, dt);
     k.group.position.set(k.x, 0, k.z);
   }
 }
 // The first kid that reaches you per floor only scares you: it vanishes with a
 // shriek and drains the flashlight. The second one is fatal.
+/* ---- low battery: warnings, beeping, then darkness ---- */
+let deadFlickerNext = 0, deadFlickerEnd = 0, lowBeepT = 0;
+function batteryWarnings(prev, now, t){
+  if(prev > 25 && now <= 25) showSubtitle('Baterka dochází — sbírej baterie!', true);
+  if(prev > 10 && now <= 10){ showSubtitle('Baterka je skoro vybitá!', true); haptic([60,60,60]); }
+  if(prev > 0 && now <= 0){ showSubtitle('Tma… najdi baterii!', true); flashStatic(); thump(0.3); haptic(200); }
+  // a quiet double beep keeps reminding you below 15 %
+  if(now > 0 && now < 15 && t > lowBeepT){ lowBeepT = t + 2.5; lowBatteryBeep(); }
+}
+function lowBatteryBeep(){
+  if(!actx) return;
+  const t0 = actx.currentTime;
+  [0, 0.12].forEach(off=>{
+    const o = actx.createOscillator(); o.type = 'square'; o.frequency.value = 1500;
+    const g = actx.createGain();
+    g.gain.setValueAtTime(0, t0+off); g.gain.linearRampToValueAtTime(0.035, t0+off+0.005);
+    g.gain.setValueAtTime(0.035, t0+off+0.05); g.gain.linearRampToValueAtTime(0, t0+off+0.06);
+    o.connect(g); g.connect(masterGain);
+    o.start(t0+off); o.stop(t0+off+0.07);
+  });
+}
+
 let kidScareUsed = false;
 function kidScare(k){
   kidScareUsed = true;
@@ -2167,7 +2200,7 @@ function step(dt,t){
   let sprinting = false;
   if(keys['shift'] && !crouching && (mf||mr) && stamina>0 && !exhausted){
     sprinting = true;
-    stamina = Math.max(0, stamina-26*dt);
+    stamina = Math.max(0, stamina-22*dt);
     if(stamina<=0) exhausted = true;
   } else {
     // a racing heart makes it harder to catch your breath
@@ -2188,13 +2221,18 @@ function step(dt,t){
     bobPhase += dt*(crouching ? 5 : (sprinting ? 12 : 8))*moveAmt;
   }
   eyeH += ((crouching ? 1.0 : EYE_H) - eyeH) * Math.min(1, dt*10);
-  battery = Math.max(0, battery - dt*((mf||mr) ? 0.6 : 0.35));
+  const drain = sprinting ? BATTERY_DRAIN.sprint : ((mf||mr) ? BATTERY_DRAIN.walk : BATTERY_DRAIN.idle);
+  const prevBattery = battery;
+  battery = Math.max(0, battery - dt*drain);
+  batteryWarnings(prevBattery, battery, t);
   for(const b of batteries){
     if(b.taken || Math.hypot(player.x-b.x, player.z-b.z) > 0.8) continue;
     b.taken = true; b.group.visible = false;
+    const wasDead = battery <= 0;
     battery = Math.min(100, battery + BATTERY_CHARGE);
     pickupChime();
-    showSubtitle('+ baterie', true);
+    showSubtitle(wasDead ? 'Světlo je zpátky!' : '+ baterie', true);
+    haptic(30);
   }
   for(const tk of tokens){
     if(tk.taken || Math.hypot(player.x-tk.x, player.z-tk.z) > 0.8) continue;
@@ -2244,9 +2282,7 @@ function step(dt,t){
   if(sprinting && !steve.hunting && dist < CELL*3.5 && t - steve.lastHeard > 2){
     steve.lastHeard = t;
     const [hr,hc] = cellAt(player.x, player.z);
-    steve.path = bfsPath(steve.cell[0], steve.cell[1], hr, hc);
-    if(steve.path.length>1) steve.path.shift();
-    if(steve.path.length) steve.target = cellCenter(steve.path[0][0], steve.path[0][1]);
+    routeTo(steve, hr, hc);
   }
   if(steve.moving){
     steve.stepTimer -= dt;
@@ -2324,6 +2360,7 @@ function step(dt,t){
   document.getElementById('tstamp').textContent = fmtTime(elapsed);
   document.getElementById('battFill').style.width = battery+'%';
   document.getElementById('battFill').style.background = battery < 20 ? 'var(--red)' : '';
+  document.getElementById('battery').classList.toggle('low', battery < 20);
   document.getElementById('battPct').textContent = Math.round(battery)+'%';
 }
 
@@ -2446,8 +2483,12 @@ function advanceMascots(dt,t){
   for(const m of mascots){
     const wasMoving = m.moving;
     m.moving = false;
+    if(!m.cell){ m.cell = cellAt(m.x, m.z); m.path = []; }
     const d = Math.hypot(player.x-m.x, player.z-m.z);
-    if(d > CELL*8) continue;
+    // it notices you like the kids do, but remembers longer — it's at home in the dark
+    const sees = d < CELL*1.3 || (d < CELL*6 && hasLineOfSight(m, player));
+    if(sees){ m.alertUntil = t + 8; m.lastKnown = cellAt(player.x, player.z); }
+    if(t > (m.alertUntil || 0)) continue;
     if(inFlashlight(m)){
       // caught in the beam mid-step: it freezes with a creaky squeak
       if(wasMoving && actx && t - (m.squeakT || 0) > 2){
@@ -2457,17 +2498,9 @@ function advanceMascots(dt,t){
       }
       continue;
     }
-    if(t - m.lastRepath > 0.7){
-      const [mr,mc] = cellAt(m.x,m.z), [pr,pc] = cellAt(player.x,player.z);
-      m.path = bfsPath(mr,mc,pr,pc);
-      if(m.path.length>1) m.path.shift(); else m.path = [];
-      m.lastRepath = t;
-    }
-    const dest = m.path.length ? cellCenter(m.path[0][0], m.path[0][1]) : {x:player.x, z:player.z};
-    const dx = dest.x-m.x, dz = dest.z-m.z, dd = Math.hypot(dx,dz);
-    if(dd < 0.15){ if(m.path.length) m.path.shift(); continue; }
-    m.x += dx/dd*sp*dt; m.z += dz/dd*sp*dt;
-    m.moving = true;
+    if(t - m.lastRepath > 0.6){ routeTo(m, m.lastKnown[0], m.lastKnown[1]); m.lastRepath = t; }
+    m.moving = (sees && sameCell(m, player.x, player.z)) ? walkDirect(m, player.x, player.z, sp, dt) : walkPath(m, sp, dt);
+    if(!m.moving) continue;
     m.stepT -= dt;
     if(m.stepT <= 0){ m.stepT = 0.42; mascotStep(m); }
   }
@@ -3015,10 +3048,21 @@ function render(){
   flashTarget.position.copy(camera.position).add(dir);
   // a draining battery dims the beam, shortens its reach and makes it sputter
   const charge = battery/100;
-  const battFactor = battery <= 0 ? 0.06 : 0.3 + 0.7*charge;
-  const sputter = battery < 20 && Math.random() < (20-battery)/120 ? 0.12 : 1;
-  flashlight.intensity = (1.15 + 0.15*Math.sin(t*14) + (Math.random()<0.01? -0.6:0)) * battFactor * sputter;
-  flashlight.distance = 6 + 9*Math.min(1, charge*1.5);
+  if(battery <= 0){
+    // dead battery: total darkness, except a brief dying flicker every few seconds
+    if(t > deadFlickerNext){ deadFlickerNext = t + 3 + Math.random()*4; deadFlickerEnd = t + 0.12 + Math.random()*0.1; }
+    flashlight.intensity = t < deadFlickerEnd ? 0.35 : 0;
+    flashlight.distance = 5;
+  } else {
+    const battFactor = 0.3 + 0.7*charge;
+    const sputter = battery < 20 && Math.random() < (20-battery)/120 ? 0.12 : 1;
+    flashlight.intensity = (1.15 + 0.15*Math.sin(t*14) + (Math.random()<0.01? -0.6:0)) * battFactor * sputter;
+    flashlight.distance = 6 + 9*Math.min(1, charge*1.5);
+  }
+  // the room's ambient glow fades with the battery too, so an empty one really means darkness
+  const amb = Math.min(1, battery/40);
+  ambient.intensity = 0.16 + 0.39*amb;
+  hemi.intensity = 0.08 + 0.22*amb;
 
   for(const b of batteries.concat(tokens)){
     if(b.taken) continue;
