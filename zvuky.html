@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Zkouška zvuků</title>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=VT323&display=swap" rel="stylesheet">
+<style>
+  :root{ --bg:#05020c; --card:#120a24; --ink:#e8dcc8; --dim:#8f84d6; --accent:#3df2ff; --warn:#ff4a6a; }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Special Elite',monospace;padding:20px 16px 60px;}
+  h1{font-family:'VT323',monospace;font-size:34px;letter-spacing:3px;color:var(--accent);margin:0 0 4px;}
+  p.lead{color:var(--dim);max-width:720px;line-height:1.6;margin:0 0 22px;font-size:14px;}
+  h2{font-family:'VT323',monospace;font-size:22px;letter-spacing:2px;color:var(--dim);margin:28px 0 10px;text-transform:uppercase;}
+  .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));max-width:1100px;}
+  .card{background:var(--card);border:1px solid #2c1f52;padding:14px;}
+  .card.off{opacity:.45;}
+  .name{font-family:'VT323',monospace;font-size:21px;letter-spacing:1px;}
+  .meta{font-size:12px;color:var(--dim);margin:2px 0 10px;}
+  .btns{display:flex;flex-wrap:wrap;gap:6px;}
+  button{font-family:'Special Elite',monospace;font-size:13px;background:transparent;color:var(--accent);border:1px solid var(--accent);padding:7px 10px;cursor:pointer;}
+  button:active{background:var(--accent);color:var(--bg);}
+  label{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;color:var(--warn);cursor:pointer;}
+  #summary{margin-top:28px;max-width:720px;padding:14px;border:1px dashed #2c1f52;font-size:14px;line-height:1.6;}
+  #start{font-size:16px;padding:12px 22px;margin-bottom:6px;}
+</style>
+</head>
+<body>
+<h1>ZKOUŠKA ZVUKŮ</h1>
+<p class="lead">Poslech dětských zvuků tak, jak je přehrává hra: <b>Originál</b> je soubor beze změn, <b>Ve hře</b> je oříznutý a s ozvěnou herny,
+<b>Za zdí</b> je tlumený, <b>Zleva / Zprava</b> ukazuje směr. Zaškrtni zvuky, které se ti nelíbí, a pošli mi seznam dole.
+Nejlépe se sluchátky.</p>
+<button id="start">▶ Zapnout zvuk</button>
+
+<h2>Chichotání (když se dítě plíží)</h2>
+<div class="grid" id="giggles"></div>
+<h2>Šepot a hlasy dětí</h2>
+<div class="grid" id="voices"></div>
+<h2>Lekačka</h2>
+<div class="grid" id="scare"></div>
+
+<div id="summary">Zatím nic neoznačeno.</div>
+
+<script>
+(function(){
+"use strict";
+const GROUPS = {
+  giggles: [['giggle1','chichot, krátký'],['giggle2','chichot, krátký'],['giggle3','chichot, dlouhý'],['giggle4','chichot, dlouhý'],['kids_hihi','„hihi… hihi“']],
+  voices: [['kids_kdejsi','„Kde jsi?“ – šepot zblízka'],['kids_vidime','„Vidíme tě…“ – při vyděšení'],['kids_pojd','„Pojď si s námi hrát.“ – když tě chytí']],
+  scare: [['shriek','výkřik při vyděšení']]
+};
+let ctx = null, reverb = null;
+const buffers = {}, raw = {};
+function impulse(sec, decay){
+  const len = Math.floor(ctx.sampleRate*sec), b = ctx.createBuffer(2, len, ctx.sampleRate);
+  for(let ch=0; ch<2; ch++){ const d = b.getChannelData(ch); for(let i=0;i<len;i++) d[i] = (Math.random()*2-1)*Math.pow(1-i/len, decay); }
+  return b;
+}
+// same trimming the game does: cut silence, cap length, short fade-out
+function trim(buf, maxSec){
+  const th = 0.02, chs = buf.numberOfChannels, sr = buf.sampleRate;
+  let first = buf.length, last = 0;
+  for(let c=0;c<chs;c++){ const d = buf.getChannelData(c);
+    for(let i=0;i<d.length;i++) if(Math.abs(d[i])>th){ first = Math.min(first,i); break; }
+    for(let i=d.length-1;i>=0;i--) if(Math.abs(d[i])>th){ last = Math.max(last,i); break; } }
+  if(first >= last) return buf;
+  const start = Math.max(0, first - Math.floor(sr*0.005));
+  const end = Math.min(last + Math.floor(sr*0.05), start + Math.floor(sr*maxSec), buf.length);
+  const out = ctx.createBuffer(chs, end-start, sr), fade = Math.min(Math.floor(sr*0.04), end-start);
+  for(let c=0;c<chs;c++){ const s = buf.getChannelData(c), o = out.getChannelData(c);
+    for(let i=0;i<end-start;i++) o[i] = s[start+i];
+    for(let i=0;i<fade;i++) o[end-start-1-i] *= i/fade; }
+  return out;
+}
+const MAXLEN = {giggles:3.2, voices:2.5, scare:1.6};
+function play(name, mode){
+  if(!ctx || !buffers[name]) return;
+  const src = ctx.createBufferSource();
+  const g = ctx.createGain();
+  if(mode === 'raw'){ src.buffer = raw[name]; g.gain.value = 0.9; src.connect(g); g.connect(ctx.destination); src.start(); return; }
+  src.buffer = buffers[name];
+  src.playbackRate.value = 0.97 + Math.random()*0.12;
+  let dest = ctx.destination;
+  if(mode === 'left' || mode === 'right'){ const p = ctx.createStereoPanner(); p.pan.value = mode === 'left' ? -0.9 : 0.9; p.connect(ctx.destination); dest = p; }
+  const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = mode === 'wall' ? 450 : 2600; f.connect(dest);
+  g.gain.value = mode === 'wall' ? 0.6 : 0.9;
+  src.connect(g); g.connect(f);
+  const w = ctx.createGain(); w.gain.value = 0.25; g.connect(w); w.connect(reverb);
+  src.start();
+}
+const marked = new Set();
+function updateSummary(){
+  const el = document.getElementById('summary');
+  el.textContent = marked.size ? 'Nelíbí se mi: ' + [...marked].map(n=> n+'.mp3').join(', ') : 'Zatím nic neoznačeno.';
+}
+for(const [gid, items] of Object.entries(GROUPS)){
+  const box = document.getElementById(gid);
+  for(const [name, desc] of items){
+    const card = document.createElement('div'); card.className = 'card';
+    card.innerHTML = '<div class="name">'+name+'.mp3</div><div class="meta">'+desc+' · <span class="len">načítám…</span></div>'
+      + '<div class="btns">'
+      + '<button data-m="raw">Originál</button><button data-m="game">Ve hře</button><button data-m="wall">Za zdí</button>'
+      + '<button data-m="left">Zleva</button><button data-m="right">Zprava</button></div>'
+      + '<label><input type="checkbox"> Nelíbí se mi</label>';
+    card.querySelectorAll('button').forEach(b=> b.addEventListener('click', ()=>{ ensureAudio(); play(name, b.dataset.m); }));
+    card.querySelector('input').addEventListener('change', e=>{
+      e.target.checked ? marked.add(name) : marked.delete(name);
+      card.classList.toggle('off', e.target.checked); updateSummary();
+    });
+    card.dataset.name = name; card.dataset.group = gid;
+    box.appendChild(card);
+  }
+}
+function ensureAudio(){
+  if(ctx){ if(ctx.state !== 'running') ctx.resume(); return; }
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  reverb = ctx.createConvolver(); reverb.buffer = impulse(3.4, 3.2);
+  const rs = ctx.createGain(); rs.gain.value = 0.65; reverb.connect(rs); rs.connect(ctx.destination);
+  document.querySelectorAll('.card').forEach(card=>{
+    const name = card.dataset.name, group = card.dataset.group, len = card.querySelector('.len');
+    fetch('sounds/'+name+'.mp3').then(r=> r.ok ? r.arrayBuffer() : Promise.reject())
+      .then(ab=> new Promise((res, rej)=> ctx.decodeAudioData(ab, res, rej)))
+      .then(buf=>{
+        raw[name] = buf; buffers[name] = trim(buf, MAXLEN[group]);
+        len.textContent = 'soubor ' + buf.duration.toFixed(1) + ' s, ve hře ' + buffers[name].duration.toFixed(1) + ' s';
+      }).catch(()=>{ len.textContent = 'nepodařilo se načíst'; });
+  });
+  document.getElementById('start').textContent = '🔊 Zvuk zapnutý';
+}
+document.getElementById('start').addEventListener('click', ensureAudio);
+})();
+</script>
+</body>
+</html>
