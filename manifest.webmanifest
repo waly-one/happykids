@@ -1,0 +1,15 @@
+{
+  "name": "Happy Kids 3D",
+  "short_name": "Happy Kids",
+  "lang": "cs",
+  "start_url": "./happy_kids_3d.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#05020c",
+  "theme_color": "#05020c",
+  "icons": [
+    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

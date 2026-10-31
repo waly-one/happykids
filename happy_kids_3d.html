@@ -1,0 +1,2238 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>HAPPY KIDS 3D</title>
+<!-- "Add to Home Screen" on iPhone: runs full-screen like an app -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Happy Kids">
+<meta name="theme-color" content="#05020c">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-512.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Creepster&family=Special+Elite&family=VT323&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root{
+    --yellow:#19b8d1;
+    --yellow-bright:#3df2ff;
+    --red:#e83a3a;
+    --red-dim:#7a1414;
+    --ink:#0b0902;
+    --green:#5adf5a;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;padding:0;width:100%;height:100%;
+    background:#000;overflow:hidden;
+    font-family:'Special Elite', monospace;
+    color:#d8cfa8;
+    -webkit-user-select:none;user-select:none;
+    touch-action:none;
+  }
+  #stage{position:fixed;inset:0;}
+  #stage canvas{display:block;}
+
+  #vignette{position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 16vw 3vw #000;mix-blend-mode:multiply;z-index:8;}
+  #danger{position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 12vw 4vw rgba(180,0,0,0);z-index:9;transition:box-shadow .35s;}
+  #grain{
+    position:fixed;inset:0;pointer-events:none;opacity:.045;z-index:8;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    animation:grain 0.4s steps(2) infinite;
+  }
+  @keyframes grain{0%{transform:translate(0,0)}50%{transform:translate(-2%,1%)}100%{transform:translate(1%,-2%)}}
+  #buzz{position:fixed;inset:0;pointer-events:none;background:#000;opacity:0;z-index:30;}
+  #staticFlash{position:fixed;inset:0;pointer-events:none;opacity:0;z-index:29;background:repeating-linear-gradient(0deg,#fff,#fff 1px,#000 1px,#000 2px);mix-blend-mode:overlay;}
+
+  /* ---------- HORROR HUD ---------- */
+  #hud{position:fixed;inset:0;pointer-events:none;z-index:12;font-family:'VT323',monospace;}
+  .hidden{display:none !important;}
+
+  #rec{
+    position:absolute;top:16px;right:18px;text-align:right;
+    color:#e8dcc0;font-size:20px;letter-spacing:2px;
+    text-shadow:0 0 6px rgba(0,0,0,.8);
+  }
+  #rec .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--red);margin-right:6px;
+    box-shadow:0 0 8px var(--red);animation:recBlink 1s steps(1) infinite;}
+  @keyframes recBlink{0%,55%{opacity:1;}56%,100%{opacity:0;}}
+  #tstamp{font-size:13px;color:#a99b6a;letter-spacing:1px;}
+  #floorLbl{font-size:14px;color:#8f84d6;letter-spacing:3px;}
+
+  #battery{
+    position:absolute;top:16px;left:18px;
+    display:flex;align-items:center;gap:8px;
+    color:#e8dcc0;font-size:16px;letter-spacing:1px;
+    text-shadow:0 0 6px rgba(0,0,0,.8);
+  }
+  #battery .icon{width:34px;height:16px;border:2px solid #cbbf90;border-radius:2px;position:relative;padding:2px;}
+  #battery .icon:after{content:'';position:absolute;right:-5px;top:4px;width:3px;height:6px;background:#cbbf90;}
+  #battery .fill{height:100%;background:var(--yellow-bright);width:100%;transition:width .3s;}
+
+  #objective{
+    position:absolute;top:60px;left:18px;
+    font-size:14px;color:#8a7d55;letter-spacing:1px;text-transform:uppercase;
+    font-family:'Special Elite',monospace;
+  }
+
+  #ecgWrap{
+    position:absolute;bottom:18px;left:18px;
+    background:rgba(5,4,1,.55);border:1px solid #4a3f18;padding:6px 10px 2px;
+  }
+  #ecgWrap .lbl{font-size:12px;color:#7a9c5a;letter-spacing:2px;margin-bottom:2px;}
+  #bpm{color:var(--green);font-size:20px;}
+
+  #crosshair{
+    position:absolute;top:50%;left:50%;width:6px;height:6px;margin:-3px 0 0 -3px;
+    border-radius:50%;background:rgba(232,220,192,.55);
+    box-shadow:0 0 3px rgba(0,0,0,.9);
+  }
+
+  #hideState{
+    position:absolute;top:50%;left:50%;transform:translate(-50%,22px);
+    font-size:15px;letter-spacing:3px;text-transform:uppercase;
+    color:#8a7d55;text-shadow:0 0 6px rgba(0,0,0,.9);
+  }
+  #hideState.safe{color:var(--yellow-bright);text-shadow:0 0 8px rgba(61,242,255,.7);}
+
+  #audioBtn{
+    position:absolute;top:16px;left:18px;transform:translateY(58px);
+    pointer-events:auto;cursor:pointer;
+    font-family:'Special Elite',monospace;font-size:14px;letter-spacing:1px;
+    color:#e8dcc0;background:rgba(0,0,0,.5);
+    padding:6px 12px;border:1px solid #6a5c26;
+    text-transform:uppercase;
+  }
+  #stamina{position:absolute;top:118px;left:18px;width:130px;font-size:13px;letter-spacing:2px;color:#8f84d6;text-transform:uppercase;font-family:'VT323',monospace;}
+  #stamina .bar{height:7px;border:1px solid #6a5cc0;margin-top:3px;padding:1px;}
+  #stamina .fill{height:100%;width:100%;background:#3df2ff;}
+  #stamina.exh .fill{background:#ff4a6a;}
+  #audioBtn.needsTap{color:#0b0902;background:var(--yellow-bright);border-color:var(--yellow-bright);box-shadow:0 0 14px rgba(61,242,255,.55);}
+  #lockhint{
+    position:absolute;bottom:14%;left:50%;transform:translateX(-50%);
+    font-size:14px;letter-spacing:2px;color:#a99b6a;
+    background:rgba(0,0,0,.4);padding:6px 14px;border:1px solid #4a3f18;
+    text-transform:uppercase;
+  }
+
+  #minimap{position:absolute;top:16px;right:0;transform:translate(0,54px);background:rgba(0,0,0,.5);border:1px solid #4a3f18;}
+
+  #subtitle{
+    position:fixed;bottom:20%;left:50%;transform:translateX(-50%);
+    font-family:'Creepster',cursive;
+    font-size:clamp(26px,6vw,46px);
+    color:var(--red);
+    text-shadow:0 0 10px rgba(232,58,58,.9),0 0 30px rgba(0,0,0,1);
+    opacity:0;transition:opacity .25s;
+    z-index:15;pointer-events:none;white-space:nowrap;
+  }
+  #subtitle.show{opacity:1;}
+
+  /* ---------- SCREENS ---------- */
+  .screen{
+    position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:radial-gradient(ellipse at center, #1d0b3a 0%, #05020c 80%);
+    text-align:center;padding:24px;z-index:40;
+  }
+  h1.title{
+    font-family:'Creepster', cursive;
+    font-size:clamp(48px,12vw,110px);
+    color:var(--yellow-bright);
+    letter-spacing:4px;margin:0 0 6px 0;
+    text-shadow:0 0 14px rgba(61,242,255,.65), 0 0 46px rgba(61,242,255,.25);
+    animation:flicker 3.2s infinite;
+  }
+  @keyframes flicker{
+    0%,19%,21%,23%,44%,46%,80%,100%{opacity:1;}
+    20%,22%,45%,81%{opacity:.4;}
+  }
+  .sub{font-size:14px;letter-spacing:3px;color:#8f84d6;text-transform:uppercase;margin-bottom:26px;}
+  .desc{max-width:560px;line-height:1.7;font-size:15px;color:#cfc6f5;margin-bottom:26px;}
+  .desc b{color:var(--red);}
+  button.playbtn{
+    font-family:'Special Elite',monospace;
+    background:transparent;border:2px solid var(--yellow-bright);color:var(--yellow-bright);
+    padding:14px 40px;font-size:18px;letter-spacing:3px;cursor:pointer;text-transform:uppercase;
+    transition:all .2s;
+  }
+  button.playbtn:hover{background:var(--yellow-bright);color:#0b0902;box-shadow:0 0 22px rgba(61,242,255,.6);}
+  .diffbtn,.mousebtn{opacity:.55;}
+  .diffbtn.active,.mousebtn.active{opacity:1;background:var(--yellow-bright);color:#0b0902;box-shadow:0 0 18px rgba(61,242,255,.55);}
+  .settings{display:flex;flex-direction:column;gap:14px;margin:6px 0 28px;min-width:min(320px,90vw);}
+  .settings label{display:flex;justify-content:space-between;align-items:center;gap:16px;
+    font-size:14px;letter-spacing:2px;color:#cfc6f5;text-transform:uppercase;}
+  .settings input[type=range]{width:160px;accent-color:var(--yellow-bright);}
+  #endscreen .stat{color:#f0e2a0;font-size:14px;letter-spacing:2px;margin-bottom:22px;}
+
+  #lookzone{position:fixed;inset:0;z-index:11;}
+
+  /* ---------- TOUCH / iPHONE ---------- */
+  .only-touch{display:none;}
+  body.touch .only-touch{display:revert;}
+  body.touch .only-desktop{display:none;}
+  body{-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;}
+
+  #joyBase{
+    position:absolute;width:112px;height:112px;margin:-56px 0 0 -56px;border-radius:50%;
+    left:calc(env(safe-area-inset-left) + 96px);top:calc(100% - 96px - env(safe-area-inset-bottom));
+    border:2px solid rgba(61,242,255,.4);background:rgba(61,242,255,.06);
+    opacity:.3;transition:opacity .15s;
+  }
+  #joyBase.active{opacity:1;}
+  #joyKnob{position:absolute;left:50%;top:50%;width:48px;height:48px;margin:-24px 0 0 -24px;border-radius:50%;
+    background:rgba(61,242,255,.3);border:2px solid rgba(61,242,255,.75);}
+
+  #touchBtns{display:none;position:absolute;gap:14px;align-items:flex-end;pointer-events:auto;
+    right:calc(18px + env(safe-area-inset-right));bottom:calc(18px + env(safe-area-inset-bottom));}
+  body.touch #touchBtns{display:flex;}
+  .tbtn{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-family:'VT323',monospace;font-size:15px;letter-spacing:1px;text-transform:uppercase;color:#e8dcc0;
+    background:rgba(10,6,24,.55);border:2px solid rgba(143,132,214,.75);pointer-events:auto;}
+  .tbtn.big{width:84px;height:84px;font-size:18px;border-color:var(--yellow-bright);}
+  .tbtn.down,.tbtn.on{background:rgba(61,242,255,.35);color:#fff;}
+  #tbPause{display:none;position:absolute;width:44px;height:44px;font-size:13px;
+    top:calc(12px + env(safe-area-inset-top));left:50%;margin-left:-22px;}
+  body.touch #tbPause{display:flex;}
+
+  body.touch #ecgWrap{display:none;}
+  body.touch #battery,body.touch #objective,body.touch #audioBtn,body.touch #stamina{margin-left:env(safe-area-inset-left);}
+  body.touch #rec{margin-right:env(safe-area-inset-right);}
+  body.touch #minimap{width:100px;height:100px;margin-right:env(safe-area-inset-right);}
+  body.touch h1.title{font-size:clamp(40px,9vw,80px);}
+  body.touch .desc{font-size:13px;line-height:1.55;}
+
+  /* screens scroll on short (landscape phone) viewports and stay centred when they fit */
+  .screen{overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;justify-content:flex-start;
+    padding:max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));}
+  .screen > :first-child{margin-top:auto !important;}
+  .screen > :last-child{margin-bottom:auto !important;}
+  #rotatescreen{z-index:45;}
+  .rotIcon{font-size:64px;animation:rotHint 1.8s ease-in-out infinite;}
+  @keyframes rotHint{0%,30%{transform:rotate(0)}60%,100%{transform:rotate(-90deg)}}
+</style>
+</head>
+<body>
+
+<div id="stage"></div>
+<div id="vignette"></div>
+<div id="danger"></div>
+<div id="grain"></div>
+<div id="buzz"></div>
+<div id="staticFlash"></div>
+<div id="lookzone"></div>
+
+<div id="hud" class="hidden">
+  <div id="rec"><span class="dot"></span>REC &nbsp;<span id="tstamp">00:00</span><div id="floorLbl">PATRO 1</div></div>
+  <div id="battery"><div class="icon"><div class="fill" id="battFill"></div></div><span id="battPct">100%</span></div>
+  <div id="objective">Cíl: najdi žetony ■</div>
+  <div id="ecgWrap"><div class="lbl">TEP</div><canvas id="ecg" width="140" height="34"></canvas><div id="bpm">72 bpm</div></div>
+  <div id="crosshair"></div>
+  <div id="hideState" class="hidden"></div>
+  <canvas id="minimap" width="130" height="130"></canvas>
+  <div id="lockhint" class="hidden">Rozhlížení: pohybuj myší k okraji obrazovky (na mobilu táhni prstem)</div>
+  <div id="audioBtn">🔊 Zvuk</div>
+  <div id="stamina"><div><span class="only-desktop">Sprint [Shift]</span><span class="only-touch">Výdrž</span></div><div class="bar"><div class="fill" id="stamFill"></div></div></div>
+  <div id="joyBase" class="only-touch"><div id="joyKnob"></div></div>
+  <div class="tbtn" id="tbPause">❚❚</div>
+  <div id="touchBtns">
+    <div class="tbtn" id="tbCrouch">Přikrčit</div>
+    <div class="tbtn big" id="tbSprint">Sprint</div>
+  </div>
+</div>
+<div id="subtitle"></div>
+
+<div class="screen" id="startscreen">
+  <h1 class="title">HAPPY KIDS</h1>
+  <div class="sub">3D &nbsp;·&nbsp; opuštěná herna &nbsp;·&nbsp; neon, automaty, koberec s konfetami</div>
+  <div class="desc">
+    Probudil ses v obří opuštěné herně — řady automatů, blikající neony a koberec s konfetami, ze kterého není východ.
+    Automaty tiše bzučí a blikají. Nejsi tu ale sám — bydlí tu <b>Steve</b>.
+    Steve je... šťastný. Steve tě má rád. V chodbách stojí děti s papírovými čepicemi — hýbou se jen, když se na ně nedíváš, ale pak sprintují, a kdo se jich dotkne, nepřežije. A jakmile tě uvidí v chodbě, uslyšíš to:
+    <b>„Vidím tě.“</b><br><br>
+    <span class="only-desktop">Pohyb: <b>WASD</b> / šipky, <b>Shift</b> = sprint (Steve ho uslyší), <b>C</b> = přikrčit se. Rozhlížení: <b>myší</b> (klikni do hry, Esc uvolní kurzor).</span>
+    <span class="only-touch">Ovládání: <b>levý palec</b> = chůze, <b>pravý palec</b> = rozhlížení, tlačítka vpravo dole = <b>sprint</b> (Steve ho uslyší) a <b>přikrčení</b>. Hraj na šířku.</span>
+    Východ je zamčený — sesbírej <b>3 žetony</b> schované ve slepých uličkách. Baterka se vybíjí, sbírej svítící <b>baterie</b>.
+    Přikrčený u automatu jsi <b>schovaný</b> a Steve tě nevidí. Poslouchej jeho kroky — a hihňání dětí.
+    Každý útěk tě zavede o <b>patro níž</b>: větší bludiště, rychlejší Steve, víc dětí.
+    První dítě, které tě na patře chytí, tě jen vyděsí — druhé už ne.<span class="only-desktop"> <b>P / Esc</b> = pauza.</span>
+  </div>
+  <div class="sub" style="margin-bottom:10px;">Obtížnost</div>
+  <div id="diffPicker" style="display:flex;gap:10px;margin-bottom:26px;">
+    <button class="playbtn diffbtn" data-diff="easy" style="padding:10px 22px;font-size:14px;">Snadná</button>
+    <button class="playbtn diffbtn active" data-diff="medium" style="padding:10px 22px;font-size:14px;">Střední</button>
+    <button class="playbtn diffbtn" data-diff="hard" style="padding:10px 22px;font-size:14px;">Těžká</button>
+  </div>
+  <div id="mouseSection">
+    <div class="sub" style="margin-bottom:10px;">Rozhlížení myší</div>
+    <div style="display:flex;gap:10px;margin-bottom:26px;flex-wrap:wrap;justify-content:center;">
+      <button class="playbtn mousebtn active" data-mouse="lock" style="padding:10px 22px;font-size:14px;">Zamčený kurzor</button>
+      <button class="playbtn mousebtn" data-mouse="edge" style="padding:10px 22px;font-size:14px;">Okraj obrazovky</button>
+    </div>
+  </div>
+  <div class="sub" id="bestLbl" style="margin:-12px 0 22px;letter-spacing:1px;text-transform:none;"></div>
+  <button class="playbtn" id="startBtn">Vstoupit do bludiště</button>
+</div>
+
+<div class="screen hidden" id="rotatescreen">
+  <div class="rotIcon">📱</div>
+  <div class="sub" style="margin:18px 0 0;">Otoč telefon na šířku</div>
+</div>
+
+<div class="screen hidden" id="pausescreen">
+  <h1 class="title">PAUZA</h1>
+  <div class="settings">
+    <label>Hlasitost <input type="range" id="volSlider" min="0" max="100" step="1"></label>
+    <label><span class="only-desktop">Citlivost myši</span><span class="only-touch">Citlivost rozhlížení</span> <input type="range" id="sensSlider" min="30" max="250" step="5"></label>
+  </div>
+  <button class="playbtn" id="resumeBtn">Pokračovat</button>
+  <button class="playbtn" id="pauseMenuBtn" style="margin-top:14px;padding:10px 22px;font-size:14px;">Hlavní menu</button>
+  <div class="sub only-desktop" style="margin:22px 0 0;">P nebo Esc = pauza</div>
+  <div class="sub only-touch" style="margin:22px 0 0;text-transform:none;letter-spacing:1px;">Na iPhonu vypni tichý režim, jinak hra nehraje zvuk.</div>
+</div>
+
+<div class="screen hidden" id="endscreen">
+  <h1 class="title" id="endTitle">KONEC HRY</h1>
+  <div class="stat" id="endStat"></div>
+  <button class="playbtn hidden" id="nextBtn">Sejít o patro níž</button>
+  <button class="playbtn" id="restartBtn">Zkusit patro znovu</button>
+  <button class="playbtn" id="menuBtn" style="margin-top:14px;padding:10px 22px;font-size:14px;">Hlavní menu</button>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+if(typeof THREE === 'undefined'){
+  document.getElementById('startBtn').disabled = true;
+  document.querySelector('#startscreen .desc').innerHTML =
+    'Nepodařilo se načíst 3D knihovnu (Three.js) — zkontroluj prosím připojení k internetu a obnov stránku.';
+  return;
+}
+
+/* ================= MAZE ================= */
+const CELL = 4, WT = 0.35, WALL_H = 3.2, EYE_H = 1.6;
+// maze size grows with each floor (see levelConfig)
+let ROWS = 18, COLS = 18;
+let exitCell = [ROWS-1, COLS-1];
+let rng = Math.random;
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+let hWalls, vWalls, wallRects, lightFixtures;
+
+function genMaze(){
+  hWalls = Array.from({length:ROWS+1},()=>new Array(COLS).fill(true));
+  vWalls = Array.from({length:ROWS},()=>new Array(COLS+1).fill(true));
+  const visited = Array.from({length:ROWS},()=>new Array(COLS).fill(false));
+  const stack = [[0,0]];
+  visited[0][0] = true;
+  while(stack.length){
+    const [r,c] = stack[stack.length-1];
+    const nbrs = [];
+    if(r>0 && !visited[r-1][c]) nbrs.push(['up',r-1,c]);
+    if(r<ROWS-1 && !visited[r+1][c]) nbrs.push(['down',r+1,c]);
+    if(c>0 && !visited[r][c-1]) nbrs.push(['left',r,c-1]);
+    if(c<COLS-1 && !visited[r][c+1]) nbrs.push(['right',r,c+1]);
+    if(nbrs.length===0){ stack.pop(); continue; }
+    const [dir,nr,nc] = nbrs[Math.floor(rng()*nbrs.length)];
+    if(dir==='up') hWalls[r][c]=false;
+    if(dir==='down') hWalls[r+1][c]=false;
+    if(dir==='left') vWalls[r][c]=false;
+    if(dir==='right') vWalls[r][c+1]=false;
+    visited[nr][nc]=true;
+    stack.push([nr,nc]);
+  }
+  let extra = Math.floor(ROWS*COLS*0.04);
+  while(extra-->0){
+    const r = 1+Math.floor(rng()*(ROWS-2));
+    const c = 1+Math.floor(rng()*(COLS-2));
+    if(rng()<0.5) hWalls[r][c]=false; else vWalls[r][c]=false;
+  }
+  wallRects = [];
+  for(let r=0;r<=ROWS;r++) for(let c=0;c<COLS;c++) if(hWalls[r][c])
+    wallRects.push({x:c*CELL-WT/2, z:r*CELL-WT/2, w:CELL+WT, d:WT});
+  for(let r=0;r<ROWS;r++) for(let c=0;c<=COLS;c++) if(vWalls[r][c])
+    wallRects.push({x:c*CELL-WT/2, z:r*CELL-WT/2, w:WT, d:CELL+WT});
+
+  lightFixtures = [];
+  for(let r=1;r<ROWS;r+=4){
+    for(let c=1;c<COLS;c+=4){
+      const rr = Math.min(r+(rng()<0.5?0:1), ROWS-1);
+      const cc = Math.min(c+(rng()<0.5?0:1), COLS-1);
+      const cen = cellCenter(rr,cc);
+      lightFixtures.push({x:cen.x, z:cen.z, seed:rng()*1000, dead:rng()<0.12});
+    }
+  }
+}
+function fixtureIntensity(f,t){
+  if(f.dead) return Math.random()<0.005 ? 0.6 : 0;
+  const hum = 0.85 + 0.15*Math.sin(t*9+f.seed);
+  const flick = (Math.sin(t*0.6+f.seed*3) > 0.93) ? 0.15 : 1;
+  return Math.max(0, Math.min(1, hum*flick));
+}
+function isOpen(r,c,dir){
+  if(dir==='up') return r>0 && !hWalls[r][c];
+  if(dir==='down') return r<ROWS-1 && !hWalls[r+1][c];
+  if(dir==='left') return c>0 && !vWalls[r][c];
+  if(dir==='right') return c<COLS-1 && !vWalls[r][c+1];
+  return false;
+}
+function neighborsOf(r,c){
+  const list=[];
+  if(isOpen(r,c,'up')) list.push([r-1,c]);
+  if(isOpen(r,c,'down')) list.push([r+1,c]);
+  if(isOpen(r,c,'left')) list.push([r,c-1]);
+  if(isOpen(r,c,'right')) list.push([r,c+1]);
+  return list;
+}
+function bfsPath(sr,sc,tr,tc){
+  if(sr===tr && sc===tc) return [[sr,sc]];
+  const q=[[sr,sc]];
+  const prev = new Map();
+  const key=(r,c)=>r*COLS+c;
+  const seen = new Set([key(sr,sc)]);
+  while(q.length){
+    const [r,c] = q.shift();
+    for(const [nr,nc] of neighborsOf(r,c)){
+      const k = key(nr,nc);
+      if(seen.has(k)) continue;
+      seen.add(k);
+      prev.set(k,[r,c]);
+      if(nr===tr && nc===tc){
+        const path=[[tr,tc]]; let cur=[tr,tc];
+        while(!(cur[0]===sr && cur[1]===sc)){ cur = prev.get(key(cur[0],cur[1])); path.push(cur); }
+        return path.reverse();
+      }
+      q.push([nr,nc]);
+    }
+  }
+  return [[sr,sc]];
+}
+function bfsDist(sr,sc){
+  const dist = Array.from({length:ROWS},()=>new Array(COLS).fill(-1));
+  dist[sr][sc] = 0;
+  const q = [[sr,sc]];
+  for(let i=0;i<q.length;i++){
+    const [r,c] = q[i];
+    for(const [nr,nc] of neighborsOf(r,c)){
+      if(dist[nr][nc] >= 0) continue;
+      dist[nr][nc] = dist[r][c]+1;
+      q.push([nr,nc]);
+    }
+  }
+  return dist;
+}
+function cellAt(x,z){ return [Math.floor(z/CELL), Math.floor(x/CELL)]; }
+function cellCenter(r,c){ return {x:c*CELL+CELL/2, z:r*CELL+CELL/2}; }
+function hasLineOfSight(a,b){
+  const [ar,ac] = cellAt(a.x,a.z);
+  const [br,bc] = cellAt(b.x,b.z);
+  if(ar===br){
+    const r=ar; const c0=Math.min(ac,bc), c1=Math.max(ac,bc);
+    for(let c=c0;c<c1;c++) if(vWalls[r][c+1]) return false;
+    return Math.abs(a.z-b.z) < CELL*0.6;
+  }
+  if(ac===bc){
+    const c=ac; const r0=Math.min(ar,br), r1=Math.max(ar,br);
+    for(let r=r0;r<r1;r++) if(hWalls[r+1][c]) return false;
+    return Math.abs(a.x-b.x) < CELL*0.6;
+  }
+  return false;
+}
+
+/* ================= SETTINGS ================= */
+function loadSettings(){
+  const def = {volume:1, sens:1};
+  try{ return Object.assign(def, JSON.parse(localStorage.getItem('hk3d.settings')) || {}); }catch(e){ return def; }
+}
+function saveSettings(){
+  try{ localStorage.setItem('hk3d.settings', JSON.stringify(settings)); }catch(e){}
+}
+const settings = loadSettings();
+
+/* ================= AUDIO / HORROR MUSIC ================= */
+let actx=null, masterGain=null, droneGain=null, heartTimer=null;
+let reverb=null, reverbSend=null, musicGain=null, musicFilter=null, droneOscs=[], noteTimer=null;
+const darkScale = [220.0, 233.1, 246.9, 261.6, 277.2, 293.7, 311.1]; // clustered/dissonant, low & uneasy
+
+function makeImpulse(ctx, seconds, decay){
+  const rate = ctx.sampleRate;
+  const length = Math.floor(rate*seconds);
+  const impulse = ctx.createBuffer(2, length, rate);
+  for(let ch=0; ch<2; ch++){
+    const data = impulse.getChannelData(ch);
+    for(let i=0;i<length;i++) data[i] = (Math.random()*2-1) * Math.pow(1-i/length, decay);
+  }
+  return impulse;
+}
+
+function initAudio(){
+  if(actx) return;
+  actx = new (window.AudioContext||window.webkitAudioContext)();
+  if(actx.state === 'suspended') actx.resume().catch(()=>{});
+
+  masterGain = actx.createGain(); masterGain.gain.value = settings.volume;
+  masterGain.connect(actx.destination);
+
+  reverb = actx.createConvolver();
+  reverb.buffer = makeImpulse(actx, 3.4, 3.2);
+  reverbSend = actx.createGain(); reverbSend.gain.value = 0.65;
+  reverb.connect(reverbSend); reverbSend.connect(masterGain);
+
+  // deep sub rumble (room tone)
+  const osc = actx.createOscillator();
+  osc.type='sine'; osc.frequency.value=48;
+  droneGain = actx.createGain(); droneGain.gain.value=0.025;
+  osc.connect(droneGain); droneGain.connect(masterGain);
+  osc.start();
+  const lfo = actx.createOscillator(); lfo.frequency.value=0.07;
+  const lfoGain = actx.createGain(); lfoGain.gain.value=0.012;
+  lfo.connect(lfoGain); lfoGain.connect(droneGain.gain);
+  lfo.start();
+
+  // dissonant ambient pad cluster — the "horror music" bed
+  musicFilter = actx.createBiquadFilter();
+  musicFilter.type = 'lowpass'; musicFilter.frequency.value = 420; musicFilter.Q.value = 0.8;
+  musicGain = actx.createGain(); musicGain.gain.value = 0.075;
+  musicFilter.connect(musicGain);
+  musicGain.connect(masterGain);
+  musicGain.connect(reverb);
+
+  const clusterFreqs = [55, 58.3, 61.7, 110];
+  droneOscs = clusterFreqs.map((f,i)=>{
+    const o = actx.createOscillator();
+    o.type = i%2===0 ? 'sine' : 'triangle';
+    o.frequency.value = f;
+    const g = actx.createGain(); g.gain.value = 0.5/clusterFreqs.length;
+    o.connect(g); g.connect(musicFilter);
+    o.start();
+    return {osc:o, gain:g, baseFreq:f};
+  });
+
+  const flfo = actx.createOscillator(); flfo.frequency.value = 0.045;
+  const flfoGain = actx.createGain(); flfoGain.gain.value = 240;
+  flfo.connect(flfoGain); flfoGain.connect(musicFilter.frequency);
+  flfo.start();
+
+  // fluorescent-light electrical hum (60Hz + harmonics) — the signature Backrooms sound
+  const humGain = actx.createGain(); humGain.gain.value = 0.028;
+  humGain.connect(masterGain);
+  [60, 120, 180].forEach((f,i)=>{
+    const o = actx.createOscillator();
+    o.type = 'square';
+    o.frequency.value = f;
+    const g = actx.createGain(); g.gain.value = i===0 ? 0.6 : 0.25/i;
+    o.connect(g); g.connect(humGain);
+    o.start();
+  });
+  // slight random flicker on the hum, echoing the visual light flicker
+  const humFlicker = actx.createOscillator(); humFlicker.frequency.value = 0.31;
+  const humFlickerGain = actx.createGain(); humFlickerGain.gain.value = 0.012;
+  humFlicker.connect(humFlickerGain); humFlickerGain.connect(humGain.gain);
+  humFlicker.start();
+
+  // faint tape-hiss / stale-air noise bed, filtered down to a soft wash
+  const noiseBuf = actx.createBuffer(1, actx.sampleRate*2, actx.sampleRate);
+  const nd = noiseBuf.getChannelData(0);
+  for(let i=0;i<nd.length;i++) nd[i] = Math.random()*2-1;
+  const noiseSrc = actx.createBufferSource();
+  noiseSrc.buffer = noiseBuf; noiseSrc.loop = true;
+  const noiseFilter = actx.createBiquadFilter();
+  noiseFilter.type='bandpass'; noiseFilter.frequency.value=2200; noiseFilter.Q.value=0.6;
+  const noiseGain = actx.createGain(); noiseGain.gain.value = 0.012;
+  noiseSrc.connect(noiseFilter); noiseFilter.connect(noiseGain); noiseGain.connect(masterGain);
+  noiseSrc.start();
+
+  scheduleNote();
+  scheduleLoop();
+  scheduleMotif();
+  scheduleDistantThud();
+}
+
+// far-off metallic groans / distant thuds — like something moving in another room
+function scheduleDistantThud(){
+  if(!actx) return;
+  const delay = 10 + Math.random()*16;
+  setTimeout(()=>{ playDistantThud(); scheduleDistantThud(); }, delay*1000);
+}
+function playDistantThud(){
+  if(!actx) return;
+  const t = actx.currentTime;
+  const o = actx.createOscillator(); o.type='sine';
+  o.frequency.setValueAtTime(90+Math.random()*40, t);
+  o.frequency.exponentialRampToValueAtTime(28, t+0.5);
+  const g = actx.createGain();
+  g.gain.setValueAtTime(0.05+Math.random()*0.03, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t+1.4);
+  o.connect(g); g.connect(reverb); g.connect(masterGain);
+  o.start(t); o.stop(t+1.5);
+}
+
+// a continuous, slow, unsettling melodic loop — always audible, this is
+// the actual "music" (not just a rare accent) layered over the ambient bed
+const loopSeq = [220.00, 246.94, 233.08, 196.00, 174.61, 196.00, 220.00, 261.63];
+let loopIndex = 0, loopTimer = null;
+function scheduleLoop(){
+  if(!actx) return;
+  playLoopNote(loopSeq[loopIndex % loopSeq.length]);
+  loopIndex++;
+  const interval = 1.9 + Math.random()*0.5;
+  loopTimer = setTimeout(scheduleLoop, interval*1000);
+}
+function playLoopNote(freq){
+  const t = actx.currentTime;
+  const o = actx.createOscillator();
+  o.type = 'sine';
+  o.frequency.value = freq;
+  const o2 = actx.createOscillator();
+  o2.type = 'sine';
+  o2.frequency.value = freq*2.005; // gentle beating for unease
+  const g = actx.createGain();
+  g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(0.10, t+0.25);
+  g.gain.exponentialRampToValueAtTime(0.0001, t+2.4);
+  o.connect(g); o2.connect(g);
+  g.connect(reverb); g.connect(masterGain);
+  o.start(t); o.stop(t+2.5);
+  o2.start(t); o2.stop(t+2.5);
+}
+
+function scheduleNote(){
+  if(!actx) return;
+  const delay = 5 + Math.random()*10;
+  noteTimer = setTimeout(()=>{ playNote(); scheduleNote(); }, delay*1000);
+}
+function playNote(){
+  if(!actx) return;
+  const t = actx.currentTime;
+  let freq = darkScale[Math.floor(Math.random()*darkScale.length)];
+  if(Math.random()<0.35) freq *= 0.5;
+  const o = actx.createOscillator();
+  o.type = Math.random()<0.5 ? 'sine' : 'triangle';
+  o.frequency.value = freq;
+  const g = actx.createGain();
+  g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(0.10, t+0.08);
+  g.gain.exponentialRampToValueAtTime(0.0001, t+3.6);
+  o.connect(g); g.connect(reverb); g.connect(masterGain);
+  o.start(t); o.stop(t+3.7);
+}
+
+// a short, dissonant, rhythmic stab pattern — this is the "horror music" hit,
+// clusters of close/tritone intervals with sharp attack, distortion and tremolo for intensity
+function makeDistortionCurve(amount){
+  const n = 256, curve = new Float32Array(n);
+  for(let i=0;i<n;i++){
+    const x = i*2/n - 1;
+    curve[i] = Math.tanh(x*amount);
+  }
+  return curve;
+}
+const motifChords = [
+  {freqs:[196.00, 207.65], d:0.30},
+  {freqs:[174.61, 185.00], d:0.26},
+  {freqs:[220.00, 233.08], d:0.30},
+  {freqs:[196.00, 207.65, 233.08], d:0.55},
+  {freqs:[164.81, 174.61], d:0.26},
+  {freqs:[196.00, 233.08, 277.18], d:1.1}
+];
+let motifTimer = null;
+function scheduleMotif(baseDelay){
+  if(!actx) return;
+  const delay = baseDelay!=null ? baseDelay : 22 + Math.random()*14;
+  clearTimeout(motifTimer);
+  motifTimer = setTimeout(()=>{ playMotif(); scheduleMotif(); }, delay*1000);
+}
+function playMotif(intensity){
+  if(!actx) return;
+  intensity = intensity==null ? 0.55 : intensity;
+  const dist = actx.createWaveShaper();
+  dist.curve = makeDistortionCurve(2 + intensity*3);
+  const bus = actx.createGain(); bus.gain.value = 0.5;
+  const trem = actx.createOscillator(); trem.frequency.value = 5 + Math.random()*1.5;
+  const tremGain = actx.createGain(); tremGain.gain.value = 0.18;
+  trem.connect(tremGain); tremGain.connect(bus.gain);
+  trem.start();
+  dist.connect(bus); bus.connect(reverb); bus.connect(masterGain);
+  setTimeout(()=>{ try{ trem.stop(); }catch(e){} }, 3200);
+
+  let t = actx.currentTime + 0.04;
+  const oct = Math.random()<0.35 ? 0.5 : 1;
+  for(const chord of motifChords){
+    for(const f of chord.freqs){
+      const o = actx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = f*oct;
+      const g = actx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.07*intensity, t+0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, t+chord.d);
+      o.connect(g); g.connect(dist);
+      o.start(t); o.stop(t+chord.d+0.05);
+    }
+    t += chord.d*0.85;
+  }
+}
+function setMusicTension(amount){
+  if(!actx) return;
+  amount = Math.max(0, Math.min(1, amount));
+  const t = actx.currentTime;
+  musicGain.gain.setTargetAtTime(0.075+amount*0.09, t, 0.6);
+  musicFilter.frequency.setTargetAtTime(400+amount*1100, t, 0.4);
+  droneOscs.forEach((d,i)=>{
+    d.osc.detune.setTargetAtTime(amount*18*(i%2===0?1:-1), t, 0.3);
+  });
+}
+
+function thump(vol){
+  if(!actx) return;
+  const t = actx.currentTime;
+  const o = actx.createOscillator(); o.type='sine'; o.frequency.setValueAtTime(70,t);
+  o.frequency.exponentialRampToValueAtTime(30,t+0.18);
+  const g = actx.createGain(); g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.28);
+  o.connect(g); g.connect(masterGain);
+  o.start(t); o.stop(t+0.3);
+}
+function stinger(){
+  if(!actx) return;
+  const t = actx.currentTime;
+  const o = actx.createOscillator(); o.type='sawtooth'; o.frequency.setValueAtTime(180,t);
+  o.frequency.exponentialRampToValueAtTime(40,t+0.6);
+  const g = actx.createGain(); g.gain.setValueAtTime(0.09,t); g.gain.exponentialRampToValueAtTime(0.0001,t+0.8);
+  o.connect(g); g.connect(reverb); g.connect(masterGain);
+  o.start(t); o.stop(t+0.85);
+}
+let heartBPM = 72, heartTarget = 72;
+function setHeartTarget(bpm){ heartTarget = bpm; }
+function tickHeart(){
+  heartBPM += (heartTarget-heartBPM)*0.08;
+  thump(0.08 + Math.max(0,(heartBPM-72))/300);
+  document.getElementById('bpm').textContent = Math.round(heartBPM)+' bpm';
+  drawEcg();
+  if(heartTimer) clearTimeout(heartTimer);
+  heartTimer = setTimeout(tickHeart, 60000/Math.max(40,heartBPM));
+}
+// Steve's "voice": a synthesized, distorted throaty growl that always plays,
+// so he still sounds wrong on devices without a Czech speech voice
+function steveGrowl(){
+  if(!actx) return;
+  const t = actx.currentTime, dur = 1.1;
+  const o = actx.createOscillator(); o.type = 'sawtooth';
+  o.frequency.setValueAtTime(68, t);
+  o.frequency.linearRampToValueAtTime(52, t+dur);
+  const vib = actx.createOscillator(); vib.frequency.value = 7;
+  const vibGain = actx.createGain(); vibGain.gain.value = 6;
+  vib.connect(vibGain); vibGain.connect(o.frequency);
+  const formant = actx.createBiquadFilter(); formant.type = 'bandpass'; formant.Q.value = 4;
+  formant.frequency.setValueAtTime(380, t);
+  formant.frequency.linearRampToValueAtTime(720, t+dur*0.4);
+  formant.frequency.linearRampToValueAtTime(300, t+dur);
+  const shaper = actx.createWaveShaper(); shaper.curve = makeDistortionCurve(6);
+  const g = actx.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.22, t+0.08);
+  g.gain.setValueAtTime(0.22, t+dur*0.7);
+  g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+  o.connect(shaper); shaper.connect(formant); formant.connect(g);
+  g.connect(reverb); g.connect(masterGain);
+  o.start(t); o.stop(t+dur+0.05);
+  vib.start(t); vib.stop(t+dur+0.05);
+}
+function hasCzechVoice(){
+  try{ return window.speechSynthesis.getVoices().some(v=> /^cs/i.test(v.lang)); }catch(e){ return false; }
+}
+function speak(text){
+  steveGrowl();
+  // without a Czech voice the line would be read with English pronunciation — the subtitle and growl carry it instead
+  if(!('speechSynthesis' in window) || !hasCzechVoice()) return;
+  try{
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.pitch = 0.15; u.rate = 0.8; u.volume = Math.min(1, settings.volume); u.lang='cs-CZ';
+    window.speechSynthesis.speak(u);
+  }catch(e){}
+}
+if('speechSynthesis' in window) try{ window.speechSynthesis.getVoices(); }catch(e){}
+
+/* ================= ECG WIDGET ================= */
+const ecgCanvas = document.getElementById('ecg');
+const ecgCtx = ecgCanvas.getContext('2d');
+let ecgPhase = 0;
+function drawEcg(){
+  ecgPhase += 0.9;
+  ecgCtx.clearRect(0,0,140,34);
+  ecgCtx.strokeStyle = '#5adf5a';
+  ecgCtx.lineWidth = 2;
+  ecgCtx.beginPath();
+  for(let x=0;x<140;x++){
+    const p = (x+ecgPhase) % 40;
+    let y = 17;
+    if(p>16 && p<20) y = 17 - (p-16)*6;
+    else if(p>=20 && p<22) y = 17 - 8 + (p-20)*10;
+    else if(p>=22 && p<25) y = 17 + 6 - (p-22)*2;
+    if(x===0) ecgCtx.moveTo(x,y); else ecgCtx.lineTo(x,y);
+  }
+  ecgCtx.stroke();
+}
+
+/* ================= THREE.JS SETUP ================= */
+let W=window.innerWidth, H=window.innerHeight;
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x07040f, 2, 17);
+const camera = new THREE.PerspectiveCamera(75, W/H, 0.1, 40);
+camera.rotation.order = 'YXZ';
+const renderer = new THREE.WebGLRenderer({antialias:true});
+// phones have 3x screens; rendering at 1.5x keeps iPhones cool and smooth
+let isTouch = window.matchMedia('(pointer: coarse)').matches ||
+  (navigator.maxTouchPoints > 0 && !window.matchMedia('(any-pointer: fine)').matches);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouch ? 1.5 : 2));
+renderer.setSize(W,H);
+renderer.setClearColor(0x07040f);
+document.getElementById('stage').appendChild(renderer.domElement);
+
+function onResize(){
+  W = window.innerWidth; H = window.innerHeight;
+  camera.aspect = W/H; camera.updateProjectionMatrix();
+  renderer.setSize(W,H);
+  checkOrientation();
+}
+window.addEventListener('resize', onResize);
+window.addEventListener('orientationchange', ()=> setTimeout(onResize, 250));
+// phones in portrait during play: pause and ask to rotate
+function checkOrientation(){
+  const show = isTouch && H > W && running && !gameEnded;
+  document.getElementById('rotatescreen').classList.toggle('hidden', !show);
+  if(show) pauseGame();
+}
+
+function makeCanvasTex(draw,size){
+  const c = document.createElement('canvas'); c.width=size; c.height=size;
+  draw(c.getContext('2d'), size);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+const NEON = ['#ff2bd6','#19e6ff','#ffe14a','#7dff4a','#9d6bff','#ff6a3d'];
+function drawWall(g,s,glow){
+  g.fillStyle = glow ? '#000' : '#150d33';
+  g.fillRect(0,0,s,s);
+  if(!glow){
+    g.fillStyle = '#0d0722'; g.fillRect(0,s*0.66,s,s*0.34);
+    for(let i=0;i<60;i++){
+      g.fillStyle = 'rgba(160,140,255,'+(0.08+Math.random()*0.2)+')';
+      g.fillRect(Math.random()*s, Math.random()*s*0.6, 2, 2);
+    }
+  } else {
+    const line = (y,h,col)=>{ g.shadowColor=col; g.shadowBlur=6; g.fillStyle=col; g.fillRect(0,y,s,h); g.shadowBlur=0; };
+    line(s*0.28,3,'#ff2bd6'); line(s*0.64,4,'#19e6ff'); line(s*0.69,2,'#19e6ff');
+    for(let i=0;i<5;i++){
+      const col = NEON[(i*2)%NEON.length];
+      g.strokeStyle = col; g.lineWidth = 2; g.shadowColor = col; g.shadowBlur = 5;
+      const x = 12+i*24+Math.random()*6, y = s*0.40+Math.random()*s*0.12;
+      g.beginPath();
+      if(i%2) g.arc(x,y,5,0,Math.PI*2); else g.rect(x-5,y-5,10,10);
+      g.stroke(); g.shadowBlur = 0;
+    }
+  }
+}
+const wallTex = makeCanvasTex((g,s)=>drawWall(g,s,false),128);
+const wallGlowTex = makeCanvasTex((g,s)=>drawWall(g,s,true),128);
+wallTex.repeat.set(2,1);
+wallGlowTex.repeat.set(2,1);
+
+const floorTex = makeCanvasTex((g,s)=>{
+  g.fillStyle = '#0b0720'; g.fillRect(0,0,s,s);
+  for(let i=0;i<34;i++){
+    const col = NEON[Math.floor(Math.random()*NEON.length)];
+    g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 4;
+    g.globalAlpha = 0.35+Math.random()*0.35;
+    const x = Math.random()*s, y = Math.random()*s, r = 10+Math.random()*22, k = Math.floor(Math.random()*4);
+    g.beginPath();
+    if(k===0){ g.arc(x,y,r,0,Math.PI*2); g.stroke(); }
+    else if(k===1){ g.moveTo(x,y-r); g.lineTo(x+r,y+r); g.lineTo(x-r,y+r); g.closePath(); g.stroke(); }
+    else if(k===2){ g.rect(x-r/2,y-r/2,r,r); g.fill(); }
+    else { g.moveTo(x-r,y); for(let j=1;j<=4;j++) g.lineTo(x-r+j*r/2, y+(j%2?-r/2:r/2)); g.stroke(); }
+  }
+  g.globalAlpha = 1;
+},256);
+
+const ceilTex = makeCanvasTex((g,s)=>{
+  g.fillStyle = '#07040f'; g.fillRect(0,0,s,s);
+  g.strokeStyle = 'rgba(120,90,255,0.25)'; g.lineWidth = 2;
+  g.strokeRect(1,1,s-2,s-2);
+  g.beginPath(); g.moveTo(s/2,0); g.lineTo(s/2,s); g.moveTo(0,s/2); g.lineTo(s,s/2); g.stroke();
+  for(let i=0;i<14;i++){
+    g.fillStyle = NEON[Math.floor(Math.random()*NEON.length)];
+    g.globalAlpha = 0.5; g.fillRect(Math.random()*s, Math.random()*s, 2, 2);
+  }
+  g.globalAlpha = 1;
+},128);
+
+const floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(1,1), new THREE.MeshStandardMaterial({map:floorTex, roughness:1}));
+floorMesh.rotation.x = -Math.PI/2;
+scene.add(floorMesh);
+
+const ceilMesh = new THREE.Mesh(new THREE.PlaneGeometry(1,1), new THREE.MeshStandardMaterial({map:ceilTex, roughness:1}));
+ceilMesh.rotation.x = Math.PI/2;
+scene.add(ceilMesh);
+
+const ambient = new THREE.AmbientLight(0x3b2a66, 0.55);
+scene.add(ambient);
+const hemi = new THREE.HemisphereLight(0x5a3aa0, 0x05020c, 0.3);
+scene.add(hemi);
+
+const flashlight = new THREE.SpotLight(0xfff2c0, 1.3, 15, THREE.MathUtils.degToRad(28), 0.55, 1.7);
+const flashTarget = new THREE.Object3D();
+scene.add(flashlight, flashTarget);
+flashlight.target = flashTarget;
+
+const exitLight = new THREE.PointLight(0x4fff5a, 1.5, 8, 2);
+scene.add(exitLight);
+const exitMarker = new THREE.Mesh(new THREE.CircleGeometry(1.2,24), new THREE.MeshBasicMaterial({color:0x2fff3a, transparent:true, opacity:0.35}));
+exitMarker.rotation.x = -Math.PI/2;
+scene.add(exitMarker);
+
+// resize floor, ceiling and exit to the current maze dimensions
+function resizeArena(rows, cols){
+  ROWS = rows; COLS = cols;
+  exitCell = [ROWS-1, COLS-1];
+  for(const m of [floorMesh, ceilMesh]){
+    m.scale.set(COLS*CELL, ROWS*CELL, 1);
+    m.position.set(COLS*CELL/2, m === ceilMesh ? WALL_H : 0, ROWS*CELL/2);
+  }
+  floorTex.repeat.set(COLS*1.3, ROWS*1.3);
+  ceilTex.repeat.set(COLS*1.3, ROWS*1.3);
+  const ec = cellCenter(exitCell[0], exitCell[1]);
+  exitLight.position.set(ec.x, 1.2, ec.z);
+  exitMarker.position.set(ec.x, 0.02, ec.z);
+}
+resizeArena(ROWS, COLS);
+
+let wallMesh = null;
+function buildWallMesh(){
+  if(wallMesh){ scene.remove(wallMesh); wallMesh.geometry.dispose(); }
+  const geo = new THREE.BoxGeometry(1,1,1);
+  const mat = new THREE.MeshStandardMaterial({map:wallTex, emissive:0xffffff, emissiveMap:wallGlowTex, emissiveIntensity:0.9, roughness:0.9});
+  wallMesh = new THREE.InstancedMesh(geo, mat, wallRects.length);
+  const m = new THREE.Matrix4();
+  for(let i=0;i<wallRects.length;i++){
+    const w = wallRects[i];
+    m.makeScale(w.w, WALL_H, w.d);
+    m.setPosition(w.x+w.w/2, WALL_H/2, w.z+w.d/2);
+    wallMesh.setMatrixAt(i, m);
+  }
+  wallMesh.instanceMatrix.needsUpdate = true;
+  scene.add(wallMesh);
+}
+
+// A fixed pool of lights is moved to the fixtures nearest the player. The light
+// count never changes between floors, so three.js doesn't recompile shaders and
+// big mazes stay as cheap to render as small ones.
+const FIXTURE_COLORS = [0xff2bd6,0x19e6ff,0x9d6bff,0xffe14a,0x4aff9a];
+const LIGHT_POOL = 10;
+const fixtureLights = Array.from({length:LIGHT_POOL}, ()=>{
+  const l = new THREE.PointLight(0xffffff, 0, 9, 2);
+  scene.add(l);
+  return l;
+});
+let lastLightAssign = -1;
+function buildFixtureLights(){
+  for(const l of fixtureLights){ l.intensity = 0; l.userData.fixture = null; }
+  lastLightAssign = -1;
+}
+function assignFixtureLights(t){
+  if(t - lastLightAssign < 0.25) return;
+  lastLightAssign = t;
+  const near = lightFixtures
+    .map(f=>({f, d:(f.x-player.x)**2 + (f.z-player.z)**2}))
+    .sort((a,b)=> a.d-b.d)
+    .slice(0, LIGHT_POOL);
+  for(let i=0;i<LIGHT_POOL;i++){
+    const l = fixtureLights[i], f = near[i] && near[i].f;
+    l.userData.fixture = f || null;
+    if(!f) continue;
+    l.color.setHex(FIXTURE_COLORS[Math.floor(f.seed)%5]);
+    l.position.set(f.x, WALL_H-0.3, f.z);
+  }
+}
+
+// Steve
+const steveGroup = new THREE.Group();
+const steveMat = new THREE.MeshStandardMaterial({color:0x080808, roughness:1});
+const steveBody = new THREE.Mesh(new THREE.BoxGeometry(0.7,1.5,0.5), steveMat);
+steveBody.position.y = 0.75;
+const steveHead = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5), steveMat);
+steveHead.position.y = 1.75;
+steveGroup.add(steveBody, steveHead);
+const eyeGeo = new THREE.SphereGeometry(0.055,8,8);
+const eyeMatL = new THREE.MeshBasicMaterial({color:0xffd23a, fog:false});
+const eyeMatR = new THREE.MeshBasicMaterial({color:0xffd23a, fog:false});
+const eyeL = new THREE.Mesh(eyeGeo, eyeMatL); eyeL.position.set(-0.12,1.78,0.25);
+const eyeR = new THREE.Mesh(eyeGeo, eyeMatR); eyeR.position.set(0.12,1.78,0.25);
+steveGroup.add(eyeL, eyeR);
+const steveGlow = new THREE.PointLight(0xffd23a, 0.5, 3.2, 2);
+steveGlow.position.set(0,1.75,0.2);
+steveGroup.add(steveGlow);
+scene.add(steveGroup);
+steveGroup.visible = false;
+
+/* ================= PARTY KIDS ================= */
+function makeHatTex(c1, c2){
+  return makeCanvasTex((g,s)=>{
+    g.fillStyle = c1; g.fillRect(0,0,s,s);
+    g.fillStyle = c2;
+    for(let y=0;y<s;y+=s/4) g.fillRect(0,y,s,s/8);
+  }, 64);
+}
+const kidGeo = {
+  legs: new THREE.CylinderGeometry(0.055,0.05,0.38,6),
+  arm:  new THREE.CylinderGeometry(0.04,0.035,0.4,6),
+  body: new THREE.CylinderGeometry(0.15,0.19,0.52,8),
+  head: new THREE.SphereGeometry(0.16,12,10),
+  eye:  new THREE.SphereGeometry(0.03,6,6),
+  hat:  new THREE.ConeGeometry(0.115,0.3,12),
+  pom:  new THREE.SphereGeometry(0.035,6,6),
+  smile:new THREE.TorusGeometry(0.075,0.009,6,14,Math.PI)
+};
+const kidSkin = new THREE.MeshStandardMaterial({color:0xcfc4a8, roughness:0.9});
+const kidDark = new THREE.MeshBasicMaterial({color:0x000000});
+const kidLegMat = new THREE.MeshStandardMaterial({color:0x1c1a14, roughness:1});
+const kidBodyMats = [0x6b5a3a,0x4a5a6b,0x6b3a3a,0x3a5a45,0x5a4a6b].map(c=> new THREE.MeshStandardMaterial({color:c, roughness:1}));
+const kidHatMats = [['#d94a6a','#f4e3a1'],['#3a8fd9','#f4e3a1'],['#e6c93a','#d94a6a'],['#5ac85a','#f4e3a1']]
+  .map(([a,b])=> new THREE.MeshStandardMaterial({map:makeHatTex(a,b), roughness:0.8, emissive:0x2a2a2a, emissiveIntensity:0.6}));
+const kidPomMat = new THREE.MeshBasicMaterial({color:0xffe066});
+
+function makeKid(){
+  const g = new THREE.Group();
+  const bodyMat = kidBodyMats[Math.floor(rng()*kidBodyMats.length)];
+  const add = (geo, mat, x, y, z)=>{ const m = new THREE.Mesh(geo, mat); m.position.set(x,y,z); g.add(m); return m; };
+  const limb = (geo, mat, x, y, drop)=>{
+    const piv = new THREE.Group(); piv.position.set(x,y,0); g.add(piv);
+    const m = new THREE.Mesh(geo, mat); m.position.y = -drop; piv.add(m);
+    return piv;
+  };
+  const legL = limb(kidGeo.legs, kidLegMat, -0.07, 0.38, 0.19);
+  const legR = limb(kidGeo.legs, kidLegMat,  0.07, 0.38, 0.19);
+  add(kidGeo.body, bodyMat, 0, 0.64, 0);
+  const armL = limb(kidGeo.arm, bodyMat, -0.21, 0.84, 0.2); armL.rotation.z =  0.12;
+  const armR = limb(kidGeo.arm, bodyMat,  0.21, 0.84, 0.2); armR.rotation.z = -0.12;
+  add(kidGeo.head, kidSkin, 0, 1.04, 0);
+  add(kidGeo.eye, kidDark, -0.06, 1.07, 0.14);
+  add(kidGeo.eye, kidDark,  0.06, 1.07, 0.14);
+  const sm = add(kidGeo.smile, kidDark, 0, 1.03, 0.145); sm.rotation.z = Math.PI;
+  const tilt = (rng()-0.5)*0.25;
+  const hat = add(kidGeo.hat, kidHatMats[Math.floor(rng()*kidHatMats.length)], 0, 1.34, 0);
+  hat.rotation.z = tilt;
+  add(kidGeo.pom, kidPomMat, -Math.sin(tilt)*0.15, 1.34+Math.cos(tilt)*0.15, 0);
+  g.userData = {legL, legR, armL, armR};
+  return g;
+}
+
+/* ================= ARCADE CABINETS ================= */
+const arcadeNames = ['HAPPY KIDS','SPACE KIDS','GHOST RACE','PARTY TIME','LAST COIN','NIGHT BOWL'];
+function makeMarqueeTex(name,color){
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = '#08040f'; g.fillRect(0,0,256,64);
+  g.fillStyle = color; g.shadowColor = color; g.shadowBlur = 14;
+  g.font = 'bold 30px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(name,128,34);
+  return new THREE.CanvasTexture(c);
+}
+const marqueeMats = arcadeNames.map((n,i)=> new THREE.MeshBasicMaterial({map:makeMarqueeTex(n, NEON[i%NEON.length])}));
+const screenCanvases = [];
+const screenMats = [];
+for(let i=0;i<5;i++){
+  const c = document.createElement('canvas'); c.width = 48; c.height = 48;
+  const tex = new THREE.CanvasTexture(c);
+  tex.magFilter = THREE.NearestFilter;
+  screenCanvases.push({c, tex, pal:[NEON[i%NEON.length], NEON[(i+2)%NEON.length]]});
+  screenMats.push(new THREE.MeshBasicMaterial({map:tex}));
+}
+let lastScreenT = 0;
+function redrawScreens(){
+  for(const sc of screenCanvases){
+    const g = sc.c.getContext('2d');
+    g.fillStyle = '#04020a'; g.fillRect(0,0,48,48);
+    for(let i=0;i<26;i++){
+      g.fillStyle = sc.pal[i%2];
+      g.fillRect(Math.floor(Math.random()*12)*4, Math.floor(Math.random()*12)*4, 4, 4);
+    }
+    sc.tex.needsUpdate = true;
+  }
+}
+redrawScreens();
+const cabBodyMats = [0x120a2a,0x0a1a2e,0x2a0a22].map(c=> new THREE.MeshStandardMaterial({color:c, roughness:0.7}));
+const cabGeo = {
+  body: new THREE.BoxGeometry(0.74,1.75,0.66),
+  screen: new THREE.PlaneGeometry(0.56,0.44),
+  marquee: new THREE.PlaneGeometry(0.68,0.17),
+  panel: new THREE.BoxGeometry(0.74,0.07,0.3),
+  stick: new THREE.CylinderGeometry(0.012,0.012,0.09,6),
+  ball: new THREE.SphereGeometry(0.03,8,6),
+  btn: new THREE.CylinderGeometry(0.025,0.025,0.02,8),
+  trim: new THREE.BoxGeometry(0.02,1.7,0.5)
+};
+const btnMats = NEON.map(c=> new THREE.MeshBasicMaterial({color:c}));
+function makeCabinet(){
+  const g = new THREE.Group();
+  const add = (geo, mat, x, y, z)=>{ const m = new THREE.Mesh(geo, mat); m.position.set(x,y,z); g.add(m); return m; };
+  add(cabGeo.body, cabBodyMats[Math.floor(rng()*cabBodyMats.length)], 0, 0.875, 0);
+  const scr = add(cabGeo.screen, screenMats[Math.floor(rng()*screenMats.length)], 0, 1.2, 0.335);
+  scr.rotation.x = -0.12;
+  add(cabGeo.marquee, marqueeMats[Math.floor(rng()*marqueeMats.length)], 0, 1.6, 0.336);
+  const pn = add(cabGeo.panel, cabBodyMats[0], 0, 0.9, 0.42); pn.rotation.x = 0.15;
+  add(cabGeo.stick, btnMats[0], -0.18, 0.98, 0.42);
+  add(cabGeo.ball, btnMats[0], -0.18, 1.04, 0.42);
+  for(let i=0;i<3;i++) add(cabGeo.btn, btnMats[(i+1)%btnMats.length], 0.02+i*0.09, 0.95, 0.43);
+  const trimMat = btnMats[Math.floor(rng()*btnMats.length)];
+  add(cabGeo.trim, trimMat, -0.372, 0.875, 0);
+  add(cabGeo.trim, trimMat,  0.372, 0.875, 0);
+  return g;
+}
+let cabinets = [], cabinetRects = [];
+function buildCabinets(){
+  for(const c of cabinets) scene.remove(c);
+  cabinets = []; cabinetRects = [];
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    if(r+c<3 || (r===exitCell[0] && c===exitCell[1])) continue;
+    if(rng() > 0.28) continue;
+    const cen = cellCenter(r,c);
+    const avail = [];
+    if(hWalls[r][c]) avail.push('up');
+    if(hWalls[r+1][c]) avail.push('down');
+    if(vWalls[r][c]) avail.push('left');
+    if(vWalls[r][c+1]) avail.push('right');
+    if(!avail.length) continue;
+    const side = avail[Math.floor(rng()*avail.length)];
+    const off = (rng()-0.5)*1.8;
+    const gap = 0.34 + WT/2;
+    let px, pz, rot, rect;
+    if(side==='up'){ const z0=r*CELL; px=cen.x+off; pz=z0+gap; rot=0; rect={x:px-0.39, z:z0+WT/2, w:0.78, d:0.92}; }
+    else if(side==='down'){ const z0=(r+1)*CELL; px=cen.x+off; pz=z0-gap; rot=Math.PI; rect={x:px-0.39, z:z0-WT/2-0.92, w:0.78, d:0.92}; }
+    else if(side==='left'){ const x0=c*CELL; px=x0+gap; pz=cen.z+off; rot=Math.PI/2; rect={x:x0+WT/2, z:pz-0.39, w:0.92, d:0.78}; }
+    else { const x0=(c+1)*CELL; px=x0-gap; pz=cen.z+off; rot=-Math.PI/2; rect={x:x0-WT/2-0.92, z:pz-0.39, w:0.92, d:0.78}; }
+    const cab = makeCabinet();
+    cab.position.set(px,0,pz); cab.rotation.y = rot;
+    scene.add(cab);
+    cabinets.push(cab); cabinetRects.push(rect);
+  }
+}
+
+let kids = [];
+function buildKids(){
+  for(const k of kids) scene.remove(k.group);
+  kids = [];
+  const used = new Set();
+  // keep kids away from the start and off the direct route to the exit, so the
+  // player never dies before even getting a chance to spot them
+  const fromStart = bfsDist(0,0);
+  const exitRoute = new Set(bfsPath(0,0,exitCell[0],exitCell[1]).map(([r,c])=>r*COLS+c));
+  for(let i=0;i<levelCfg.kidGroups;i++){
+    let r, c, ok = false;
+    for(let tries=0; tries<80 && !ok; tries++){
+      r = Math.floor(rng()*ROWS);
+      c = Math.floor(rng()*COLS);
+      const k = r*COLS+c;
+      ok = !used.has(k) && !exitRoute.has(k) && fromStart[r][c] >= 8;
+    }
+    if(!ok) continue;
+    used.add(r*COLS+c);
+    const cen = cellCenter(r,c);
+    const n = 1 + Math.floor(rng()*3);
+    for(let j=0;j<n;j++){
+      const kg = makeKid();
+      const a = rng()*Math.PI*2;
+      const rad = n>1 ? 0.5+rng()*0.35 : 0;
+      kg.position.set(cen.x+Math.cos(a)*rad, 0, cen.z+Math.sin(a)*rad);
+      kg.rotation.y = rng()*Math.PI*2;
+      kg.scale.setScalar(0.9+rng()*0.2);
+      scene.add(kg);
+      kids.push({group:kg, x:kg.position.x, z:kg.position.z, phase:rng()*6.28, path:[], lastRepath:0});
+    }
+  }
+}
+
+/* ================= PICKUPS: BATTERIES & TOKENS ================= */
+const BATTERY_CHARGE = 45, TOKEN_COUNT = 3;
+const battGeo = {
+  body: new THREE.CylinderGeometry(0.09,0.09,0.32,12),
+  cap:  new THREE.CylinderGeometry(0.045,0.045,0.05,8),
+  halo: new THREE.RingGeometry(0.3,0.42,24)
+};
+const battBodyMat = new THREE.MeshBasicMaterial({color:0x3df2ff});
+const battCapMat = new THREE.MeshBasicMaterial({color:0xe8dcc0});
+const battHaloMat = new THREE.MeshBasicMaterial({color:0x3df2ff, transparent:true, opacity:0.35, side:THREE.DoubleSide});
+const tokenGeo = {
+  coin: new THREE.CylinderGeometry(0.17,0.17,0.035,20),
+  rim:  new THREE.TorusGeometry(0.17,0.022,6,24)
+};
+const tokenMat = new THREE.MeshBasicMaterial({color:0xffd23a});
+const tokenRimMat = new THREE.MeshBasicMaterial({color:0xff2bd6});
+const tokenHaloMat = new THREE.MeshBasicMaterial({color:0xffd23a, transparent:true, opacity:0.35, side:THREE.DoubleSide});
+let batteries = [], tokens = [], tokensFound = 0, tokensNeeded = 0;
+
+// random cells far enough from the start and from each other; tokens prefer
+// dead ends so the player has to explore the side corridors to find them
+function pickItemCells(count, minFromStart, spacing, avoid, deadEndsOnly){
+  const fromStart = bfsDist(0,0);
+  const cands = [];
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    if(fromStart[r][c] < minFromStart || avoid.has(r*COLS+c) || (r===exitCell[0] && c===exitCell[1])) continue;
+    if(deadEndsOnly && neighborsOf(r,c).length !== 1) continue;
+    cands.push([r,c]);
+  }
+  for(let i=cands.length-1;i>0;i--){ const j = Math.floor(rng()*(i+1)); [cands[i],cands[j]] = [cands[j],cands[i]]; }
+  const out = [];
+  for(const [r,c] of cands){
+    if(out.length >= count) break;
+    if(out.every(([or,oc])=> Math.abs(or-r)+Math.abs(oc-c) >= spacing)) out.push([r,c]);
+  }
+  return out;
+}
+function makePickup(r, c, kind){
+  const cen = cellCenter(r,c);
+  const g = new THREE.Group();
+  const spin = new THREE.Group(); spin.position.y = 0.55; g.add(spin);
+  let haloMat;
+  if(kind === 'token'){
+    const coin = new THREE.Mesh(tokenGeo.coin, tokenMat); coin.rotation.x = Math.PI/2; spin.add(coin);
+    spin.add(new THREE.Mesh(tokenGeo.rim, tokenRimMat));
+    haloMat = tokenHaloMat;
+  } else {
+    spin.add(new THREE.Mesh(battGeo.body, battBodyMat));
+    const cap = new THREE.Mesh(battGeo.cap, battCapMat); cap.position.y = 0.18; spin.add(cap);
+    spin.rotation.z = 0.35;
+    haloMat = battHaloMat;
+  }
+  const halo = new THREE.Mesh(battGeo.halo, haloMat);
+  halo.rotation.x = -Math.PI/2; halo.position.y = 0.02; g.add(halo);
+  g.position.set(cen.x, 0, cen.z);
+  scene.add(g);
+  return {group:g, spin, x:cen.x, z:cen.z, taken:false, phase:rng()*6.28};
+}
+function buildPickups(){
+  for(const p of batteries.concat(tokens)) scene.remove(p.group);
+  const avoid = new Set(kids.map(k=>{ const [r,c] = cellAt(k.x,k.z); return r*COLS+c; }));
+  let tCells = pickItemCells(TOKEN_COUNT, 8, 6, avoid, true);
+  if(tCells.length < TOKEN_COUNT){
+    for(const [r,c] of tCells) avoid.add(r*COLS+c);
+    tCells = tCells.concat(pickItemCells(TOKEN_COUNT-tCells.length, 6, 4, avoid, false));
+  }
+  for(const [r,c] of tCells) avoid.add(r*COLS+c);
+  tokens = tCells.map(([r,c])=> makePickup(r,c,'token'));
+  batteries = pickItemCells(levelCfg.batteries, 5, 6, avoid, false).map(([r,c])=> makePickup(r,c,'battery'));
+  tokensFound = 0;
+  tokensNeeded = tokens.length;
+}
+function pickupChime(freqs){
+  if(!actx) return;
+  const t = actx.currentTime;
+  (freqs || [660, 990]).forEach((f,i)=>{
+    const o = actx.createOscillator(); o.type = 'triangle'; o.frequency.value = f;
+    const g = actx.createGain();
+    g.gain.setValueAtTime(0, t+i*0.09);
+    g.gain.linearRampToValueAtTime(0.08, t+i*0.09+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+i*0.09+0.4);
+    o.connect(g); g.connect(reverb); g.connect(masterGain);
+    o.start(t+i*0.09); o.stop(t+i*0.09+0.45);
+  });
+}
+
+/* ================= POSITIONAL SFX ================= */
+// pan + volume of a sound source relative to where the player is facing
+function spatialize(sx, sz, maxDist){
+  const dx = sx-player.x, dz = sz-player.z, d = Math.hypot(dx,dz) || 0.001;
+  const rx = Math.cos(yaw), rz = -Math.sin(yaw);
+  return {pan:Math.max(-1, Math.min(1, (dx*rx+dz*rz)/d)), vol:Math.max(0, 1-d/maxDist), d};
+}
+// sounds behind walls get muffled by a lowpass
+function spatialOut(pan, muffled){
+  let dest = masterGain;
+  if(actx.createStereoPanner){
+    const p = actx.createStereoPanner(); p.pan.value = pan; p.connect(masterGain); dest = p;
+  }
+  const f = actx.createBiquadFilter();
+  f.type = 'lowpass'; f.frequency.value = muffled ? 450 : 2600;
+  f.connect(dest);
+  return f;
+}
+let stepNoiseBuf = null;
+function steveFootstep(){
+  if(!actx || !player) return;
+  const s = spatialize(steve.x, steve.z, CELL*7);
+  if(s.vol <= 0) return;
+  const out = spatialOut(s.pan, !hasLineOfSight(steve, player));
+  const t = actx.currentTime;
+  const vol = s.vol*s.vol*(steve.hunting ? 0.55 : 0.35);
+  const o = actx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(78, t); o.frequency.exponentialRampToValueAtTime(36, t+0.12);
+  const g = actx.createGain();
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t+0.22);
+  o.connect(g); g.connect(out);
+  o.start(t); o.stop(t+0.25);
+  if(!stepNoiseBuf){
+    stepNoiseBuf = actx.createBuffer(1, Math.floor(actx.sampleRate*0.15), actx.sampleRate);
+    const d = stepNoiseBuf.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i] = (Math.random()*2-1)*Math.pow(1-i/d.length, 3);
+  }
+  const n = actx.createBufferSource(); n.buffer = stepNoiseBuf;
+  const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 320; bp.Q.value = 0.9;
+  const ng = actx.createGain(); ng.gain.value = vol*0.7;
+  n.connect(bp); bp.connect(ng); ng.connect(out);
+  n.start(t);
+}
+function kidGiggle(k){
+  if(!actx || !player) return;
+  const s = spatialize(k.x, k.z, CELL*5);
+  if(s.vol <= 0) return;
+  const out = spatialOut(s.pan, s.d > CELL*1.2 && !hasLineOfSight(k, player));
+  const vol = s.vol*s.vol*0.09;
+  const t0 = actx.currentTime;
+  const base = 820 + Math.random()*260;
+  const n = 3 + Math.floor(Math.random()*3);
+  for(let i=0;i<n;i++){
+    const t = t0 + i*0.11;
+    const o = actx.createOscillator(); o.type = 'triangle';
+    o.frequency.setValueAtTime(base*(1+0.08*(i%2)), t);
+    o.frequency.exponentialRampToValueAtTime(base*0.85, t+0.08);
+    const g = actx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t+0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.09);
+    o.connect(g); g.connect(out);
+    o.start(t); o.stop(t+0.1);
+  }
+}
+
+/* ================= INPUT ================= */
+const keys = {};
+window.addEventListener('keydown', e=>{
+  if(e.target && e.target.tagName === 'INPUT') return;
+  const key = e.key.toLowerCase();
+  if(key === 'p' && !e.repeat){ paused ? resumeGame() : pauseGame(); return; }
+  if(key === 'escape'){ pauseGame(); return; }
+  keys[key] = true;
+  if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key.toLowerCase())) e.preventDefault();
+}, {passive:false});
+window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
+
+let yaw = 0, pitch = 0;
+const lockhint = document.getElementById('lockhint');
+const lookzone = document.getElementById('lookzone');
+const TURN_SPEED = 4.0; // rad/s at full mouse deflection
+const DEADZONE = 0.06;
+
+// mouse look: 'lock' = classic pointer-lock FPS look (click into the game),
+// 'edge' = the original "push the mouse toward the screen edge" steering
+let mouseMode = 'lock';
+const MOUSE_SENS = 0.0022;
+let lookHintTimer = null;
+function isLocked(){ return document.pointerLockElement === renderer.domElement; }
+function requestLook(){
+  if(isTouch || mouseMode !== 'lock' || !running || gameEnded || paused || isLocked()) return;
+  try{
+    const p = renderer.domElement.requestPointerLock();
+    if(p && p.catch) p.catch(fallbackToEdge);
+  }catch(e){ fallbackToEdge(); }
+}
+let lockWorked = false;
+function fallbackToEdge(){
+  // pointer lock can be blocked (e.g. inside some embedded frames) — never leave the player unable to look around.
+  // If it has worked before, a failure is just the browser's short cooldown after Esc: keep the mode, show the hint.
+  if(mouseMode === 'edge' || lockWorked){ updateLookHint(); return; }
+  mouseMode = 'edge';
+  syncMouseButtons();
+  updateLookHint();
+}
+function updateLookHint(){
+  clearTimeout(lookHintTimer);
+  if(!running || gameEnded || paused){ lockhint.classList.add('hidden'); return; }
+  if(!isTouch && mouseMode === 'lock'){
+    lockhint.textContent = 'Klikni do hry pro rozhlížení myší · Esc uvolní kurzor';
+    lockhint.classList.toggle('hidden', isLocked());
+    return;
+  }
+  lockhint.textContent = isTouch ? 'Levý palec = chůze · pravý palec = rozhlížení' : 'Rozhlížení: pohybuj myší k okraji obrazovky';
+  lockhint.classList.remove('hidden');
+  lookHintTimer = setTimeout(()=> lockhint.classList.add('hidden'), 4500);
+}
+document.addEventListener('pointerlockchange', ()=>{
+  if(isLocked()) lockWorked = true;
+  // Esc releases the cursor — treat that as "pause"
+  else if(mouseMode === 'lock' && running && !gameEnded) pauseGame();
+  updateLookHint();
+});
+document.addEventListener('pointerlockerror', fallbackToEdge);
+lookzone.addEventListener('click', requestLook);
+
+let mouseX = window.innerWidth/2, mouseY = window.innerHeight/2;
+window.addEventListener('mousemove', e=>{
+  mouseX = e.clientX; mouseY = e.clientY;
+  if(!isLocked()) return;
+  yaw -= e.movementX * MOUSE_SENS * settings.sens;
+  pitch -= e.movementY * MOUSE_SENS * settings.sens;
+  pitch = Math.max(-1.0, Math.min(1.0, pitch));
+});
+
+function updateMouseLook(dt){
+  if(isTouch || mouseMode !== 'edge') return;
+  let nx = (mouseX/W - 0.5)*2;
+  let ny = (mouseY/H - 0.5)*2;
+  nx = Math.abs(nx) < DEADZONE ? 0 : nx - Math.sign(nx)*DEADZONE;
+  ny = Math.abs(ny) < DEADZONE ? 0 : ny - Math.sign(ny)*DEADZONE;
+  yaw -= nx * TURN_SPEED * settings.sens * dt;
+  pitch -= ny * TURN_SPEED * settings.sens * 0.55 * dt;
+  pitch = Math.max(-1.0, Math.min(1.0, pitch));
+}
+
+// touch: drag anywhere to look (finger contact stands in for "holding" on mobile)
+let dragId = null, lastX = 0, lastY = 0;
+const TOUCH_SENS = 0.0055;
+
+// extra safety net: some sandboxed preview frames keep the AudioContext
+// suspended until a direct gesture on the page is registered.
+function unlockAudioOnce(){
+  if(actx && (actx.state === 'suspended' || actx.state === 'interrupted') && !paused) actx.resume().catch(()=>{});
+}
+window.addEventListener('pointerdown', unlockAudioOnce);
+window.addEventListener('keydown', unlockAudioOnce);
+window.addEventListener('touchstart', unlockAudioOnce, {passive:true});
+
+const audioBtn = document.getElementById('audioBtn');
+let audioMuted = false;
+audioBtn.addEventListener('click', ()=>{
+  if(!actx) initAudio();
+  if(actx && actx.state !== 'running'){
+    // first click(s): just wake the audio engine up, don't toggle mute yet
+    actx.resume().catch(()=>{});
+    syncAudioBtn();
+    return;
+  }
+  audioMuted = !audioMuted;
+  applyVolume();
+  syncAudioBtn();
+});
+function applyVolume(){
+  if(masterGain) masterGain.gain.setTargetAtTime(audioMuted ? 0 : settings.volume, actx.currentTime, 0.1);
+}
+function syncAudioBtn(){
+  const needsTap = !actx || actx.state !== 'running';
+  audioBtn.classList.toggle('needsTap', needsTap && !audioMuted);
+  audioBtn.textContent = audioMuted ? '🔇 Zvuk' : (needsTap ? (isTouch ? '🔈 Klepni pro zvuk' : '🔈 Klikni pro zvuk') : '🔊 Zvuk');
+}
+// Two-thumb touch controls: a floating joystick appears wherever the left
+// thumb lands (left 45% of the screen); any other finger drags to look around.
+const joyBase = document.getElementById('joyBase');
+const joyKnob = document.getElementById('joyKnob');
+const JOY_R = 56, JOY_DEAD = 0.15;
+const touchMove = {x:0, y:0};
+let joyId = null, joyOX = 0, joyOY = 0;
+function setJoy(dx, dy){
+  const d = Math.hypot(dx,dy), k = d > JOY_R ? JOY_R/d : 1;
+  dx *= k; dy *= k;
+  joyKnob.style.transform = 'translate('+dx+'px,'+dy+'px)';
+  const m = Math.hypot(dx,dy)/JOY_R;
+  if(m < JOY_DEAD){ touchMove.x = 0; touchMove.y = 0; return; }
+  touchMove.x = dx/JOY_R; touchMove.y = -dy/JOY_R;
+}
+function releaseJoy(){
+  joyId = null; touchMove.x = 0; touchMove.y = 0;
+  joyBase.classList.remove('active');
+  joyKnob.style.transform = '';
+  joyBase.style.left = ''; joyBase.style.top = '';
+}
+lookzone.addEventListener('touchstart', e=>{
+  e.preventDefault();
+  for(const t of e.changedTouches){
+    if(joyId === null && t.clientX < W*0.45){
+      joyId = t.identifier; joyOX = t.clientX; joyOY = t.clientY;
+      joyBase.style.left = joyOX+'px'; joyBase.style.top = joyOY+'px';
+      joyBase.classList.add('active');
+      setJoy(0,0);
+    } else if(dragId === null){
+      dragId = t.identifier; lastX = t.clientX; lastY = t.clientY;
+    }
+  }
+}, {passive:false});
+lookzone.addEventListener('touchmove', e=>{
+  e.preventDefault();
+  for(const t of e.changedTouches){
+    if(t.identifier === joyId){ setJoy(t.clientX-joyOX, t.clientY-joyOY); continue; }
+    if(t.identifier !== dragId) continue;
+    yaw -= (t.clientX-lastX) * TOUCH_SENS * settings.sens;
+    pitch -= (t.clientY-lastY) * TOUCH_SENS * settings.sens;
+    pitch = Math.max(-1.0, Math.min(1.0, pitch));
+    lastX = t.clientX; lastY = t.clientY;
+  }
+}, {passive:false});
+function endTouches(e){
+  for(const t of e.changedTouches){
+    if(t.identifier === joyId) releaseJoy();
+    if(t.identifier === dragId) dragId = null;
+  }
+}
+lookzone.addEventListener('touchend', endTouches, {passive:true});
+lookzone.addEventListener('touchcancel', endTouches, {passive:true});
+
+// on-screen buttons: sprint is held, crouch toggles, pause pauses
+let crouchToggle = false;
+function holdButton(id, onDown, onUp){
+  const el = document.getElementById(id);
+  el.addEventListener('touchstart', e=>{ e.preventDefault(); e.stopPropagation(); el.classList.add('down'); onDown(); }, {passive:false});
+  const up = e=>{ e.preventDefault(); el.classList.remove('down'); if(onUp) onUp(); };
+  el.addEventListener('touchend', up, {passive:false});
+  el.addEventListener('touchcancel', up, {passive:false});
+}
+holdButton('tbSprint', ()=>{ keys['shift'] = true; }, ()=>{ keys['shift'] = false; });
+holdButton('tbCrouch', ()=>{
+  crouchToggle = !crouchToggle;
+  document.getElementById('tbCrouch').classList.toggle('on', crouchToggle);
+});
+holdButton('tbPause', ()=> pauseGame());
+// switch to the touch layout at load, or on the first real touch if detection missed it
+function enableTouchMode(){
+  isTouch = true;
+  document.body.classList.add('touch');
+  document.getElementById('mouseSection').classList.add('hidden');
+  syncAudioBtn();
+}
+if(isTouch) enableTouchMode();
+window.addEventListener('touchstart', ()=>{ if(!isTouch) enableTouchMode(); }, {passive:true, capture:true});
+// iOS Safari: block pinch-zoom and the long-press magnifier during play
+document.addEventListener('gesturestart', e=> e.preventDefault());
+document.addEventListener('dblclick', e=> e.preventDefault());
+
+/* ================= COLLISION ================= */
+const PR = 0.38;
+function nearbyWalls(x,z,range){
+  const res=[];
+  for(const w of wallRects){
+    if(x+range<w.x || x-range>w.x+w.w || z+range<w.z || z-range>w.z+w.d) continue;
+    res.push(w);
+  }
+  for(const w of cabinetRects){
+    if(x+range<w.x || x-range>w.x+w.w || z+range<w.z || z-range>w.z+w.d) continue;
+    res.push(w);
+  }
+  return res;
+}
+function resolveCircle(pos, radius){
+  const near = nearbyWalls(pos.x,pos.z,radius+CELL);
+  for(let iter=0; iter<3; iter++){
+    for(const w of near){
+      const cx = Math.max(w.x, Math.min(pos.x, w.x+w.w));
+      const cz = Math.max(w.z, Math.min(pos.z, w.z+w.d));
+      let dx = pos.x-cx, dz = pos.z-cz;
+      let dist = Math.hypot(dx,dz);
+      if(dist < radius){
+        if(dist===0){ dx=1; dz=0; dist=0.001; }
+        const push = radius-dist;
+        pos.x += (dx/dist)*push;
+        pos.z += (dz/dist)*push;
+      }
+    }
+  }
+}
+
+/* ================= GAME STATE ================= */
+let player, steve, elapsed, running, gameEnded, battery;
+let stamina = 100, exhausted = false;
+let crouching = false, playerHidden = false, eyeH = EYE_H, playerMoving = false;
+let bobPhase = 0;
+let subtitleTimeout = null;
+
+const DIFFICULTIES = {
+  easy:   { wander: 1.7, hunt: 2.9, loseSightAfter: 5, kid: 2.1 },
+  medium: { wander: 2.0, hunt: 3.6, loseSightAfter: 6, kid: 3.0 },
+  hard:   { wander: 2.3, hunt: 4.4, loseSightAfter: 8, kid: 3.9 }
+};
+let difficulty = 'medium';
+
+// every escaped floor leads to a bigger maze with faster monsters and more kids
+function levelConfig(n){
+  return {
+    size: Math.min(28, 15 + (n-1)*3),
+    speedMul: Math.min(1.3, 1 + 0.07*(n-1)),
+    kidGroups: Math.min(12, 4 + n),
+    batteries: Math.min(7, 3 + n)
+  };
+}
+let level = 1, levelCfg = levelConfig(1), runTime = 0;
+
+/* ---- records (best floor + total time per difficulty, browser-local) ---- */
+const DIFF_NAMES = {easy:'Snadná', medium:'Střední', hard:'Těžká'};
+function loadBest(diff){
+  try{ return JSON.parse(localStorage.getItem('hk3d.best.'+diff)) || null; }catch(e){ return null; }
+}
+function saveBestIfBetter(diff, floor, time){
+  const b = loadBest(diff);
+  if(b && (b.floor > floor || (b.floor === floor && b.time <= time))) return false;
+  try{ localStorage.setItem('hk3d.best.'+diff, JSON.stringify({floor, time})); }catch(e){}
+  return true;
+}
+function updateBestLabel(){
+  const b = loadBest(difficulty);
+  document.getElementById('bestLbl').textContent = b
+    ? 'Rekord ('+DIFF_NAMES[difficulty]+'): '+b.floor+'. patro · '+fmtTime(b.time)
+    : 'Rekord ('+DIFF_NAMES[difficulty]+'): zatím žádný';
+}
+
+function syncMouseButtons(){
+  document.querySelectorAll('.mousebtn').forEach(b=> b.classList.toggle('active', b.dataset.mouse === mouseMode));
+}
+document.querySelectorAll('.mousebtn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{ mouseMode = btn.dataset.mouse; syncMouseButtons(); });
+});
+if(isTouch) document.getElementById('mouseSection').classList.add('hidden');
+document.querySelectorAll('.diffbtn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    difficulty = btn.dataset.diff;
+    document.querySelectorAll('.diffbtn').forEach(b=> b.classList.remove('active'));
+    btn.classList.add('active');
+    updateBestLabel();
+  });
+});
+updateBestLabel();
+
+function pickPatrolTarget(t){
+  // Steve always walks toward a random destination somewhere in the maze —
+  // this is what makes him actually roam the whole map instead of loitering
+  // near wherever he happens to be.
+  let tr=steve.cell[0], tc=steve.cell[1], tries=0;
+  const minDist = (ROWS+COLS)/4;
+  do{
+    tr = Math.floor(Math.random()*ROWS);
+    tc = Math.floor(Math.random()*COLS);
+    tries++;
+  } while(tries<10 && (Math.abs(tr-steve.cell[0])+Math.abs(tc-steve.cell[1])) < minDist);
+  steve.path = bfsPath(steve.cell[0], steve.cell[1], tr, tc);
+  if(steve.path.length>1) steve.path.shift();
+  if(steve.path.length){
+    steve.target = cellCenter(steve.path[0][0], steve.path[0][1]);
+  } else {
+    steve.path = [];
+    steve.target = null;
+  }
+  steve.pauseUntil = 0;
+}
+
+function pickSteveSpawn(){
+  // Steve starts somewhere around the middle of the maze — far enough from the
+  // player to give a head start, and away from the exit so it isn't guarded.
+  const fromStart = bfsDist(0,0);
+  const mr = (ROWS-1)/2, mc = (COLS-1)/2;
+  let cands = [];
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const farExit = Math.abs(r-exitCell[0])+Math.abs(c-exitCell[1]) >= 6;
+    if(fromStart[r][c] >= 12 && farExit && Math.abs(r-mr)+Math.abs(c-mc) <= 5) cands.push([r,c]);
+  }
+  if(!cands.length){
+    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++)
+      if(fromStart[r][c] >= 10 && !(r===exitCell[0] && c===exitCell[1])) cands.push([r,c]);
+  }
+  if(!cands.length) return [Math.floor(ROWS/2), Math.floor(COLS/2)];
+  return cands[Math.floor(rng()*cands.length)];
+}
+
+let exitLocked = true, lastLockedMsg = -99;
+function setExitLocked(locked){
+  exitLocked = locked;
+  exitMarker.material.color.setHex(locked ? 0xff2b4a : 0x2fff3a);
+  exitLight.color.setHex(locked ? 0xff2b4a : 0x4fff5a);
+  updateObjective();
+}
+function updateObjective(){
+  document.getElementById('objective').textContent = exitLocked
+    ? 'Cíl: najdi žetony ■ '+tokensFound+'/'+tokensNeeded
+    : 'Cíl: utíkej k východu ■';
+}
+function nearCabinet(x, z, radius){
+  for(const w of cabinetRects){
+    const cx = Math.max(w.x, Math.min(x, w.x+w.w));
+    const cz = Math.max(w.z, Math.min(z, w.z+w.d));
+    if(Math.hypot(x-cx, z-cz) < radius) return true;
+  }
+  return false;
+}
+
+function newGame(floor){
+  level = floor || 1;
+  levelCfg = levelConfig(level);
+  resizeArena(levelCfg.size, levelCfg.size);
+  rng = mulberry32((Math.random()*4294967296)>>>0);
+  genMaze();
+  buildWallMesh();
+  buildFixtureLights();
+  buildKids();
+  buildCabinets();
+  buildPickups();
+  setExitLocked(tokensNeeded > 0);
+  const [sr,sc0] = pickSteveSpawn();
+  const sc = cellCenter(sr, sc0);
+  const diff = DIFFICULTIES[difficulty] || DIFFICULTIES.medium;
+  steve = {
+    x: sc.x, z: sc.z, cell:[sr, sc0],
+    target:null, wanderSpeed:diff.wander*levelCfg.speedMul, huntSpeed:diff.hunt*levelCfg.speedMul, loseSightAfter:diff.loseSightAfter,
+    hunting:false, lastSeen:0, lastLineTime:-99, lastRepath:0, path:[], prevCell:null, pauseUntil:0,
+    moving:false, stepTimer:0, lastHeard:-99, lastKnown:null
+  };
+  kidScareUsed = false;
+  crouchToggle = false;
+  document.getElementById('tbCrouch').classList.remove('on');
+  releaseJoy();
+  crouching = false; playerHidden = false; eyeH = EYE_H; lastLockedMsg = -99;
+  pickPatrolTarget(performance.now()/1000);
+  player = { x: CELL/2, z: CELL/2 };
+  yaw = 0; pitch = 0;
+  steveGroup.visible = true;
+  elapsed = 0; running = true; gameEnded = false; battery = 100; stamina = 100; exhausted = false;
+  explored.clear();
+  document.getElementById('floorLbl').textContent = 'PATRO '+level;
+  document.getElementById('hud').classList.remove('hidden');
+  syncAudioBtn();
+  updateLookHint();
+  checkOrientation();
+  setHeartTarget(72);
+  if(heartTimer) clearTimeout(heartTimer);
+  tickHeart();
+}
+
+function advanceSteve(dt,t){
+  steve.moving = false;
+  if(!steve.hunting && (!steve.path || !steve.path.length) && !steve.target && t > (steve.pauseUntil||0)){
+    pickPatrolTarget(t);
+  }
+  const dest = steve.target;
+  if(dest){
+    const dx = dest.x-steve.x, dz = dest.z-steve.z;
+    const d = Math.hypot(dx,dz);
+    const spd = steve.hunting ? steve.huntSpeed : steve.wanderSpeed;
+    if(d < 0.12){
+      if(steve.path && steve.path.length){
+        steve.path.shift();
+        if(steve.path.length){
+          const nc = steve.path[0];
+          steve.prevCell = steve.cell;
+          steve.cell = nc;
+          steve.target = cellCenter(nc[0],nc[1]);
+        } else {
+          steve.target = null;
+          if(!steve.hunting) steve.pauseUntil = t + 1 + Math.random()*2; // brief look-around pause
+        }
+      } else {
+        steve.target = null;
+      }
+    } else {
+      steve.x += (dx/d)*spd*dt;
+      steve.z += (dz/d)*spd*dt;
+      steve.moving = true;
+      steveGroup.rotation.y = Math.atan2(dx,dz);
+    }
+  }
+
+  const ps = simPlayers();
+  let target = null, bestD = 1e9;
+  for(const p of ps){
+    const dd = Math.hypot(steve.x-p.x, steve.z-p.z);
+    // crouching behind an arcade cabinet hides you — unless Steve is right on top of you
+    if(dd < CELL*7 && dd < bestD && hasLineOfSight(steve, p) && (!p.hidden || dd < 1.3)){ bestD = dd; target = p; }
+  }
+  if(target){
+    steve.lastSeen = t;
+    if(!steve.hunting){ steve.hunting = true; onSighted(target, t); }
+    else if(t-steve.lastLineTime > 5) onSighted(target, t);
+    steve.lastKnown = cellAt(target.x,target.z);
+    if(t - steve.lastRepath > 0.5){
+      const [pr,pc] = steve.lastKnown;
+      steve.path = bfsPath(steve.cell[0],steve.cell[1],pr,pc);
+      if(steve.path.length>1) steve.path.shift();
+      steve.lastRepath = t;
+      if(steve.path.length) steve.target = cellCenter(steve.path[0][0], steve.path[0][1]);
+    }
+  } else if(steve.hunting && t-steve.lastSeen > steve.loseSightAfter){
+    steve.hunting = false; steve.path = []; steve.target = null;
+    steve.pauseUntil = t + 1 + Math.random()*2;
+  } else if(steve.hunting && !steve.target && steve.lastKnown){
+    // lost you: he reached your last known spot, now he checks the corridors around it
+    const [lr,lc] = steve.lastKnown;
+    const sr = Math.max(0, Math.min(ROWS-1, lr + Math.floor(Math.random()*7)-3));
+    const sc = Math.max(0, Math.min(COLS-1, lc + Math.floor(Math.random()*7)-3));
+    steve.path = bfsPath(steve.cell[0], steve.cell[1], sr, sc);
+    if(steve.path.length>1) steve.path.shift(); else steve.path = [];
+    if(steve.path.length) steve.target = cellCenter(steve.path[0][0], steve.path[0][1]);
+  }
+}
+function simPlayers(){
+  const list = [];
+  if(running && !gameEnded && player) list.push({id:'me', x:player.x, z:player.z, yaw:yaw, isMe:true, hidden:playerHidden});
+  return list;
+}
+function onSighted(p, t){
+  triggerSighting(t);
+}
+function advanceKids(dt,t){
+  // The kids only move while nobody is looking at them. Touch one and it's over.
+  const sp = (DIFFICULTIES[difficulty] || DIFFICULTIES.medium).kid * levelCfg.speedMul;
+  const ps = simPlayers();
+  for(const k of kids){
+    k.moving = false;
+    if(!ps.length) continue;
+    let near = null, nd = 1e9, watched = false;
+    for(const p of ps){
+      const kx = p.x-k.x, kz = p.z-k.z, d = Math.hypot(kx,kz);
+      if(d < nd){ nd = d; near = p; }
+      if(d < CELL*6 && d > 0.01){
+        const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
+        const dot = ((-kx)*fx + (-kz)*fz)/d;
+        if(dot > 0.55 && (d < CELL*1.2 || hasLineOfSight(k, p))) watched = true;
+      }
+    }
+    if(nd > CELL*6 || watched) continue;
+    if(t - k.lastRepath > 0.6){
+      const [kr,kc] = cellAt(k.x,k.z);
+      const [pr,pc] = cellAt(near.x,near.z);
+      k.path = bfsPath(kr,kc,pr,pc);
+      if(k.path.length>1) k.path.shift(); else k.path = [];
+      k.lastRepath = t;
+    }
+    const dest = (k.path && k.path.length) ? cellCenter(k.path[0][0], k.path[0][1]) : {x:near.x, z:near.z};
+    const dx = dest.x-k.x, dz = dest.z-k.z, dd = Math.hypot(dx,dz);
+    if(dd < 0.15){
+      if(k.path && k.path.length) k.path.shift();
+    } else {
+      k.x += dx/dd*sp*dt;
+      k.z += dz/dd*sp*dt;
+      k.moving = true;
+    }
+    k.group.position.set(k.x, 0, k.z);
+  }
+}
+// The first kid that reaches you per floor only scares you: it vanishes with a
+// shriek and drains the flashlight. The second one is fatal.
+let kidScareUsed = false;
+function kidScare(k){
+  kidScareUsed = true;
+  scene.remove(k.group);
+  kids.splice(kids.indexOf(k), 1);
+  battery = Math.max(0, battery - 30);
+  heartBPM = Math.max(heartBPM, 160);
+  setHeartTarget(150);
+  flashStatic();
+  shriek();
+  showSubtitle('Pojď si s námi hrát…');
+  const buzz = document.getElementById('buzz');
+  buzz.style.opacity = 0.85;
+  setTimeout(()=>{ buzz.style.opacity = 0; }, 220);
+}
+function shriek(){
+  if(!actx) return;
+  const t = actx.currentTime;
+  [1250, 1330, 1870].forEach(f=>{
+    const o = actx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f, t);
+    o.frequency.exponentialRampToValueAtTime(f*0.55, t+0.7);
+    const g = actx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.06, t+0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.75);
+    o.connect(g); g.connect(reverb); g.connect(masterGain);
+    o.start(t); o.stop(t+0.8);
+  });
+}
+function triggerSighting(t){
+  steve.lastLineTime = t;
+  stinger();
+  playMotif(0.85);
+  scheduleMotif(14 + Math.random()*8);
+  showSubtitle('Vidím tě.');
+  flashStatic();
+}
+function showSubtitle(text, pickup){
+  const el = document.getElementById('subtitle');
+  el.textContent = text;
+  el.style.color = pickup ? 'var(--yellow-bright)' : '';
+  el.style.textShadow = pickup ? '0 0 10px rgba(61,242,255,.9),0 0 30px rgba(0,0,0,1)' : '';
+  el.classList.add('show');
+  if(!pickup) speak(text);
+  clearTimeout(subtitleTimeout);
+  subtitleTimeout = setTimeout(()=> el.classList.remove('show'), 2200);
+}
+function flashStatic(){
+  const el = document.getElementById('staticFlash');
+  el.style.opacity = 0.5;
+  setTimeout(()=>{ el.style.opacity = 0; }, 140);
+}
+
+/* ================= MAIN LOOP ================= */
+let lastT = performance.now();
+function loop(now){
+  const dt = Math.min(0.05, (now-lastT)/1000);
+  lastT = now;
+  if(running && !gameEnded && !paused) step(dt, now/1000);
+  render();
+  requestAnimationFrame(loop);
+}
+
+function step(dt,t){
+  // iOS reports 'interrupted' (not 'suspended') after calls, Siri or app switches
+  if(actx && (actx.state === 'suspended' || actx.state === 'interrupted')) actx.resume().catch(()=>{});
+  syncAudioBtn();
+  updateMouseLook(dt);
+  let mf=0, mr=0;
+  if(keys['arrowup']||keys['w']) mf+=1;
+  if(keys['arrowdown']||keys['s']) mf-=1;
+  if(keys['arrowright']||keys['d']) mr+=1;
+  if(keys['arrowleft']||keys['a']) mr-=1;
+  mf += touchMove.y; mr += touchMove.x;
+  // keyboard is all-or-nothing, the joystick is analog: a light push walks slower
+  const moveAmt = Math.min(1, Math.hypot(mf, mr));
+  playerMoving = moveAmt > 0;
+
+  crouching = !!keys['c'] || crouchToggle;
+  let sprinting = false;
+  if(keys['shift'] && !crouching && (mf||mr) && stamina>0 && !exhausted){
+    sprinting = true;
+    stamina = Math.max(0, stamina-26*dt);
+    if(stamina<=0) exhausted = true;
+  } else {
+    // a racing heart makes it harder to catch your breath
+    const calm = Math.max(0.5, Math.min(1, 1 - (heartBPM-90)/180));
+    stamina = Math.min(100, stamina+13*calm*dt);
+    if(stamina>30) exhausted = false;
+  }
+  document.getElementById('stamFill').style.width = stamina+'%';
+  document.getElementById('stamina').classList.toggle('exh', exhausted);
+  if(mf||mr){
+    const fx=-Math.sin(yaw), fz=-Math.cos(yaw);
+    const rx=Math.cos(yaw), rz=-Math.sin(yaw);
+    let dx = fx*mf + rx*mr, dz = fz*mf + rz*mr;
+    const len = Math.hypot(dx,dz) || 1;
+    const spd = (crouching ? 1.4 : (sprinting ? 4.3 : 2.6)) * (sprinting ? 1 : moveAmt);
+    player.x += (dx/len)*spd*dt;
+    player.z += (dz/len)*spd*dt;
+    bobPhase += dt*(crouching ? 5 : (sprinting ? 12 : 8))*moveAmt;
+  }
+  eyeH += ((crouching ? 1.0 : EYE_H) - eyeH) * Math.min(1, dt*10);
+  battery = Math.max(0, battery - dt*((mf||mr) ? 0.6 : 0.35));
+  for(const b of batteries){
+    if(b.taken || Math.hypot(player.x-b.x, player.z-b.z) > 0.8) continue;
+    b.taken = true; b.group.visible = false;
+    battery = Math.min(100, battery + BATTERY_CHARGE);
+    pickupChime();
+    showSubtitle('+ baterie', true);
+  }
+  for(const tk of tokens){
+    if(tk.taken || Math.hypot(player.x-tk.x, player.z-tk.z) > 0.8) continue;
+    tk.taken = true; tk.group.visible = false;
+    tokensFound++;
+    if(tokensFound >= tokensNeeded){
+      setExitLocked(false);
+      pickupChime([523, 659, 784, 1047]);
+      showSubtitle('Východ je otevřený!', true);
+    } else {
+      updateObjective();
+      pickupChime([784, 1175]);
+      showSubtitle('Žeton '+tokensFound+'/'+tokensNeeded, true);
+    }
+  }
+  resolveCircle(player, PR);
+  player.x = Math.max(PR, Math.min(COLS*CELL-PR, player.x));
+  player.z = Math.max(PR, Math.min(ROWS*CELL-PR, player.z));
+  playerHidden = crouching && nearCabinet(player.x, player.z, PR+0.5);
+  const hideEl = document.getElementById('hideState');
+  hideEl.classList.toggle('hidden', !crouching);
+  hideEl.classList.toggle('safe', playerHidden);
+  hideEl.textContent = playerHidden ? 'Schovaný' : 'Přikrčený';
+
+  advanceSteve(dt,t);
+  advanceKids(dt,t);
+  for(const k of kids){
+    if(Math.hypot(player.x-k.x, player.z-k.z) < PR+0.4){
+      if(kidScareUsed){ endGame(false,'kids'); break; }
+      kidScare(k);
+      break;
+    }
+  }
+
+  const dist = Math.hypot(steve.x-player.x, steve.z-player.z);
+  // sprinting is loud — a wandering Steve nearby comes to check the noise
+  if(sprinting && !steve.hunting && dist < CELL*3.5 && t - steve.lastHeard > 2){
+    steve.lastHeard = t;
+    const [hr,hc] = cellAt(player.x, player.z);
+    steve.path = bfsPath(steve.cell[0], steve.cell[1], hr, hc);
+    if(steve.path.length>1) steve.path.shift();
+    if(steve.path.length) steve.target = cellCenter(steve.path[0][0], steve.path[0][1]);
+  }
+  if(steve.moving){
+    steve.stepTimer -= dt;
+    if(steve.stepTimer <= 0){ steve.stepTimer = steve.hunting ? 0.3 : 0.52; steveFootstep(); }
+  }
+  for(const k of kids){
+    if(!k.moving) continue;
+    if(k.giggleT === undefined) k.giggleT = Math.random()*0.8;
+    k.giggleT -= dt;
+    if(k.giggleT <= 0){ k.giggleT = 1.6 + Math.random()*2.2; kidGiggle(k); }
+  }
+  const targetBPM = Math.max(66, Math.min(185, 190 - dist*7));
+  setHeartTarget(steve.hunting ? Math.max(targetBPM,145) : targetBPM);
+
+  const danger = document.getElementById('danger');
+  const dangerAmt = steve.hunting ? Math.max(0.15, Math.min(0.55, 1-dist/16)) : (dist<9 ? Math.max(0,(9-dist)/9)*0.25 : 0);
+  danger.style.boxShadow = dangerAmt>0.01 ? `inset 0 0 ${8+dangerAmt*20}vw ${2+dangerAmt*6}vw rgba(180,0,0,${dangerAmt})` : 'inset 0 0 12vw 4vw rgba(180,0,0,0)';
+  setMusicTension(dangerAmt);
+
+  if(dist < PR+0.45) endGame(false);
+  const [pr,pc] = cellAt(player.x,player.z);
+  if(pr===exitCell[0] && pc===exitCell[1]){
+    if(!exitLocked) endGame(true);
+    else if(t - lastLockedMsg > 3){
+      lastLockedMsg = t;
+      showSubtitle('Zamčeno — žetony '+tokensFound+'/'+tokensNeeded, true);
+    }
+  }
+
+  explored.add(pr*COLS+pc);
+  for(const [nr,nc] of neighborsOf(pr,pc)) explored.add(nr*COLS+nc);
+
+  elapsed += dt;
+  runTime += dt;
+  document.getElementById('tstamp').textContent = fmtTime(elapsed);
+  document.getElementById('battFill').style.width = battery+'%';
+  document.getElementById('battFill').style.background = battery < 20 ? 'var(--red)' : '';
+  document.getElementById('battPct').textContent = Math.round(battery)+'%';
+}
+
+function fmtTime(s){
+  const m = Math.floor(s/60), sec = Math.floor(s%60);
+  return String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0');
+}
+
+function endGame(won, cause){
+  if(gameEnded) return;
+  running=false; gameEnded=true;
+  if(isLocked()) document.exitPointerLock();
+  steveGroup.visible = false;
+  if(heartTimer) clearTimeout(heartTimer);
+  document.getElementById('hud').classList.add('hidden');
+  lockhint.classList.add('hidden');
+  const end = document.getElementById('endscreen');
+  const title = document.getElementById('endTitle');
+  const stat = document.getElementById('endStat');
+  if(won){
+    title.textContent = 'UNIKL JSI';
+    title.style.color = '#8fae5a';
+    const record = saveBestIfBetter(difficulty, level, runTime);
+    stat.textContent = level+'. patro za '+fmtTime(elapsed)+' · celkem '+fmtTime(runTime)
+      + (record ? ' · NOVÝ REKORD!' : '');
+    document.getElementById('nextBtn').textContent = 'Sejít do '+(level+1)+'. patra';
+    speak(level === 1 ? 'Sbohem.' : 'Dole je to horší.');
+  } else {
+    title.textContent = cause==='kids' ? 'DĚTI TĚ CHYTILY' : 'STEVE TĚ NAŠEL';
+    title.style.color = '#e83a3a';
+    stat.textContent = level+'. patro · přežil jsi '+fmtTime(elapsed)+' · celkem '+fmtTime(runTime);
+    speak(cause==='kids' ? 'Pojď si s námi hrát.' : 'Našel jsem tě.');
+    thump(0.35);
+  }
+  document.getElementById('nextBtn').classList.toggle('hidden', !won);
+  document.getElementById('restartBtn').classList.toggle('hidden', !!won);
+  end.classList.remove('hidden');
+}
+
+/* ================= PAUSE ================= */
+let paused = false;
+const pauseScreen = document.getElementById('pausescreen');
+function pauseGame(){
+  if(!running || gameEnded || paused) return;
+  paused = true;
+  for(const k in keys) keys[k] = false;
+  releaseJoy();
+  document.querySelectorAll('.tbtn.down').forEach(b=> b.classList.remove('down'));
+  if(heartTimer) clearTimeout(heartTimer);
+  try{ window.speechSynthesis && window.speechSynthesis.cancel(); }catch(e){}
+  if(actx && actx.state === 'running') actx.suspend().catch(()=>{});
+  if(isLocked()) document.exitPointerLock();
+  lockhint.classList.add('hidden');
+  pauseScreen.classList.remove('hidden');
+}
+function resumeGame(){
+  if(!paused) return;
+  if(isTouch && H > W) return; // still in portrait — keep the rotate prompt
+  paused = false;
+  pauseScreen.classList.add('hidden');
+  if(actx) actx.resume().catch(()=>{});
+  tickHeart();
+  requestLook();
+  updateLookHint();
+}
+function quitToMenu(){
+  paused = false; running = false; gameEnded = true;
+  pauseScreen.classList.add('hidden');
+  steveGroup.visible = false;
+  if(heartTimer) clearTimeout(heartTimer);
+  if(actx) actx.resume().catch(()=>{});
+  document.getElementById('hud').classList.add('hidden');
+  lockhint.classList.add('hidden');
+  document.getElementById('startscreen').classList.remove('hidden');
+  updateBestLabel();
+}
+document.getElementById('resumeBtn').addEventListener('click', resumeGame);
+document.getElementById('pauseMenuBtn').addEventListener('click', quitToMenu);
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden) pauseGame(); });
+
+const volSlider = document.getElementById('volSlider');
+const sensSlider = document.getElementById('sensSlider');
+volSlider.value = Math.round(settings.volume*100);
+sensSlider.value = Math.round(settings.sens*100);
+volSlider.addEventListener('input', ()=>{ settings.volume = volSlider.value/100; applyVolume(); saveSettings(); });
+sensSlider.addEventListener('input', ()=>{ settings.sens = sensSlider.value/100; saveSettings(); });
+
+/* ================= RENDER ================= */
+const mini = document.getElementById('minimap');
+const mctx = mini.getContext('2d');
+const explored = new Set(); // cells the player has been in or next to (r*COLS+c)
+function drawMinimap(){
+  mctx.clearRect(0,0,130,130);
+  mctx.fillStyle = 'rgba(0,0,0,0.4)';
+  mctx.fillRect(0,0,130,130);
+  const sx = 130/(COLS*CELL), sy = 130/(ROWS*CELL);
+  // fog of war: only explored cells and their walls are drawn
+  const cw = 130/COLS, ch = 130/ROWS;
+  mctx.fillStyle = 'rgba(90,70,170,0.35)';
+  for(const k of explored) mctx.fillRect((k%COLS)*cw, Math.floor(k/COLS)*ch, cw, ch);
+  mctx.strokeStyle = 'rgba(200,180,255,0.75)'; mctx.lineWidth = 1;
+  mctx.beginPath();
+  for(const k of explored){
+    const r = Math.floor(k/COLS), c = k%COLS, x = c*cw, y = r*ch;
+    if(hWalls[r][c]){ mctx.moveTo(x,y); mctx.lineTo(x+cw,y); }
+    if(hWalls[r+1][c]){ mctx.moveTo(x,y+ch); mctx.lineTo(x+cw,y+ch); }
+    if(vWalls[r][c]){ mctx.moveTo(x,y); mctx.lineTo(x,y+ch); }
+    if(vWalls[r][c+1]){ mctx.moveTo(x+cw,y); mctx.lineTo(x+cw,y+ch); }
+  }
+  mctx.stroke();
+  mctx.fillStyle = exitLocked ? '#ff2b4a' : '#5adf5a';
+  mctx.fillRect(exitCell[1]*CELL*sx-2, exitCell[0]*CELL*sy-2, 4,4);
+  mctx.fillStyle = '#e8dcc8';
+  mctx.beginPath(); mctx.arc(player.x*sx, player.z*sy, 3,0,Math.PI*2); mctx.fill();
+  mctx.strokeStyle='#e8dcc8'; mctx.lineWidth=1.5;
+  mctx.beginPath();
+  mctx.moveTo(player.x*sx, player.z*sy);
+  mctx.lineTo(player.x*sx - Math.sin(yaw)*10, player.z*sy - Math.cos(yaw)*10);
+  mctx.stroke();
+}
+
+function render(){
+  if(!player){ renderer.render(scene,camera); return; }
+  const t = performance.now()/1000;
+  if(t - lastScreenT > 0.4){ lastScreenT = t; redrawScreens(); }
+
+  const bob = (playerMoving && running && !paused) ? Math.sin(bobPhase)*0.035 : 0;
+  camera.position.set(player.x, eyeH+bob, player.z);
+  camera.rotation.set(pitch, yaw, 0);
+
+  const dir = new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(pitch,yaw,0,'YXZ'));
+  flashlight.position.copy(camera.position);
+  flashTarget.position.copy(camera.position).add(dir);
+  // a draining battery dims the beam, shortens its reach and makes it sputter
+  const charge = battery/100;
+  const battFactor = battery <= 0 ? 0.06 : 0.3 + 0.7*charge;
+  const sputter = battery < 20 && Math.random() < (20-battery)/120 ? 0.12 : 1;
+  flashlight.intensity = (1.15 + 0.15*Math.sin(t*14) + (Math.random()<0.01? -0.6:0)) * battFactor * sputter;
+  flashlight.distance = 6 + 9*Math.min(1, charge*1.5);
+
+  for(const b of batteries.concat(tokens)){
+    if(b.taken) continue;
+    b.spin.rotation.y = t*1.6 + b.phase;
+    b.spin.position.y = 0.55 + Math.sin(t*2.2 + b.phase)*0.06;
+  }
+
+  assignFixtureLights(t);
+  for(const l of fixtureLights){
+    l.intensity = l.userData.fixture ? 1.5 * fixtureIntensity(l.userData.fixture, t) : 0;
+  }
+
+  if(steve){
+    steveGroup.position.set(steve.x, 0, steve.z);
+    const hunting = steve.hunting;
+    const eyeColor = hunting ? 0xff2222 : 0xffd23a;
+    eyeMatL.color.setHex(eyeColor);
+    eyeMatR.color.setHex(eyeColor);
+    steveGlow.color.setHex(eyeColor);
+    steveGlow.intensity = hunting ? 1.3 : 0.5;
+  }
+
+  for(const k of kids){
+    const kx = player.x-k.x, kz = player.z-k.z;
+    if(Math.hypot(kx,kz) < 10){
+      let diff = Math.atan2(kx,kz) - k.group.rotation.y;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      k.group.rotation.y += diff*(k.moving ? 0.15 : 0.03);
+    }
+    const ud = k.group.userData;
+    if(k.moving){
+      const sw = Math.sin(t*16+k.phase)*0.9;
+      ud.legL.rotation.x = sw;  ud.legR.rotation.x = -sw;
+      ud.armL.rotation.x = -sw; ud.armR.rotation.x = sw;
+      k.group.position.y = Math.abs(Math.sin(t*16+k.phase))*0.06;
+      k.group.rotation.z = 0;
+    } else {
+      ud.legL.rotation.x *= 0.85; ud.legR.rotation.x *= 0.85;
+      ud.armL.rotation.x *= 0.85; ud.armR.rotation.x *= 0.85;
+      k.group.position.y *= 0.8;
+      k.group.rotation.z = Math.sin(t*0.8+k.phase)*0.02;
+    }
+  }
+
+  drawMinimap();
+  renderer.render(scene, camera);
+
+  if(running && Math.random() < 0.01){
+    document.getElementById('buzz').style.opacity = (0.1+Math.random()*0.18).toFixed(2);
+    setTimeout(()=>{ document.getElementById('buzz').style.opacity = 0; }, 40+Math.random()*90);
+  }
+}
+
+/* ================= BOOT ================= */
+document.getElementById('startBtn').addEventListener('click', ()=>{
+  initAudio();
+  if(actx) actx.resume().catch(()=>{});
+  document.getElementById('startscreen').classList.add('hidden');
+  runTime = 0;
+  newGame(1);
+  requestLook();
+});
+function continueFrom(floor){
+  if(actx) actx.resume().catch(()=>{});
+  document.getElementById('endscreen').classList.add('hidden');
+  newGame(floor);
+  requestLook();
+}
+// retrying keeps the floor and the run's total time; the menu starts a fresh run
+document.getElementById('restartBtn').addEventListener('click', ()=> continueFrom(level));
+document.getElementById('nextBtn').addEventListener('click', ()=> continueFrom(level+1));
+document.getElementById('menuBtn').addEventListener('click', ()=>{
+  document.getElementById('endscreen').classList.add('hidden');
+  document.getElementById('startscreen').classList.remove('hidden');
+  updateBestLabel();
+});
+
+// offline cache for the installed iPhone app (only works when served over https)
+if('serviceWorker' in navigator && location.protocol === 'https:'){
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+
+requestAnimationFrame((t)=>{ lastT=t; requestAnimationFrame(loop); });
+})();
+</script>
+</body>
+</html>
