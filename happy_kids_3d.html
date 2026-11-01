@@ -111,11 +111,14 @@
   }
 
   #ecgWrap{
-    position:absolute;bottom:18px;left:18px;
+    position:absolute;bottom:18px;left:18px;color:var(--green);
     background:rgba(5,4,1,.55);border:1px solid #4a3f18;padding:6px 10px 2px;
+    transition:box-shadow .12s;
   }
   #ecgWrap .lbl{font-size:12px;color:#7a9c5a;letter-spacing:2px;margin-bottom:2px;}
-  #bpm{color:var(--green);font-size:20px;}
+  #ecgWrap.beat{box-shadow:0 0 12px currentColor;}
+  #ecg{display:block;}
+  #bpm{color:inherit;font-size:20px;}
 
   #crosshair{
     position:absolute;top:50%;left:50%;width:6px;height:6px;margin:-3px 0 0 -3px;
@@ -239,7 +242,11 @@
     top:calc(12px + env(safe-area-inset-top));left:50%;margin-left:-22px;}
   body.touch #tbPause{display:flex;}
 
-  body.touch #ecgWrap{display:none;}
+  /* on phones the heart monitor sits under the minimap, clear of the joystick */
+  body.touch #ecgWrap{bottom:auto;left:auto;top:178px;right:0;margin-right:env(safe-area-inset-right);padding:3px 6px 1px;text-align:right;}
+  body.touch #ecgWrap .lbl{display:none;}
+  body.touch #ecg{width:88px;height:22px;}
+  body.touch #bpm{font-size:15px;}
   body.touch #battery,body.touch #objective,body.touch #audioBtn,body.touch #stamina{margin-left:env(safe-area-inset-left);}
   body.touch #rec{margin-right:env(safe-area-inset-right);}
   body.touch #minimap{width:100px;height:100px;margin-right:env(safe-area-inset-right);}
@@ -898,10 +905,15 @@ function stinger(){
 let heartBPM = 72, heartTarget = 72;
 function setHeartTarget(bpm){ heartTarget = bpm; }
 function tickHeart(){
-  heartBPM += (heartTarget-heartBPM)*0.08;
+  // the pulse jumps quickly when something closes in and settles slowly afterwards
+  heartBPM += (heartTarget-heartBPM)*(heartTarget > heartBPM ? 0.2 : 0.08);
   thump(0.08 + Math.max(0,(heartBPM-72))/300);
   document.getElementById('bpm').textContent = Math.round(heartBPM)+' bpm';
-  drawEcg();
+  // green when calm, yellow when something is near, red when it's close; the box flashes on every beat
+  const wrap = document.getElementById('ecgWrap');
+  wrap.style.color = heartBPM < 95 ? '#5adf5a' : heartBPM < 135 ? '#ffd23a' : '#ff3a4a';
+  wrap.classList.add('beat');
+  setTimeout(()=> wrap.classList.remove('beat'), 120);
   if(heartTimer) clearTimeout(heartTimer);
   heartTimer = setTimeout(tickHeart, 60000/Math.max(40,heartBPM));
 }
@@ -1038,13 +1050,16 @@ function speak(text){
 if('speechSynthesis' in window) try{ window.speechSynthesis.getVoices(); }catch(e){}
 
 /* ================= ECG WIDGET ================= */
+const ecgWrapEl = document.getElementById('ecgWrap');
 const ecgCanvas = document.getElementById('ecg');
 const ecgCtx = ecgCanvas.getContext('2d');
-let ecgPhase = 0;
-function drawEcg(){
-  ecgPhase += 0.9;
+let ecgPhase = 0, ecgLastT = 0;
+// drawn every frame: the trace scrolls one spike period (40 px) per heartbeat, so it races with the pulse
+function drawEcg(t){
+  ecgPhase += Math.min(0.1, Math.max(0, t - ecgLastT)) * Math.max(40, heartBPM)/60 * 40;
+  ecgLastT = t;
   ecgCtx.clearRect(0,0,140,34);
-  ecgCtx.strokeStyle = '#5adf5a';
+  ecgCtx.strokeStyle = ecgWrapEl.style.color || '#5adf5a';
   ecgCtx.lineWidth = 2;
   ecgCtx.beginPath();
   for(let x=0;x<140;x++){
@@ -2499,9 +2514,11 @@ function step(dt,t){
   // light up a red glow on the screen edge facing the nearest one
   const fwdX = -Math.sin(yaw), fwdZ = -Math.cos(yaw), rgtX = Math.cos(yaw), rgtZ = -Math.sin(yaw);
   let warnKid = null, warnD = KID_WARN_DIST, warnAngle = 0;
+  let nearThreat = 1e9; // the closest kid or Hopsík on the move, seen or not
   for(const k of kids){
     if(!k.moving) continue;
     const kdx = k.x-player.x, kdz = k.z-player.z, kd = Math.hypot(kdx, kdz);
+    nearThreat = Math.min(nearThreat, kd);
     if(k.giggleT === undefined) k.giggleT = Math.random()*0.8;
     k.giggleT -= dt;
     if(k.giggleT <= 0){
@@ -2515,6 +2532,7 @@ function step(dt,t){
   for(const m of mascots){
     if(!m.moving) continue;
     const mdx = m.x-player.x, mdz = m.z-player.z, md = Math.hypot(mdx, mdz);
+    nearThreat = Math.min(nearThreat, md);
     const ang = Math.atan2(mdx*rgtX + mdz*rgtZ, mdx*fwdX + mdz*fwdZ) * 180/Math.PI;
     if(md < warnD && Math.abs(ang) > 50){ warnKid = m; warnD = md; warnAngle = ang; }
   }
@@ -2528,7 +2546,9 @@ function step(dt,t){
     kidWarn.style.opacity = 0.9;
   } else kidWarn.style.opacity = 0;
   const targetBPM = Math.max(66, Math.min(185, 190 - dist*7));
-  setHeartTarget(steve.hunting ? Math.max(targetBPM,145) : targetBPM);
+  // a kid or Hopsík creeping closer makes the heart race too (within three cells)
+  const threatBPM = nearThreat < CELL*3 ? 175 - nearThreat*9 : 0;
+  setHeartTarget(Math.max(steve.hunting ? Math.max(targetBPM,145) : targetBPM, threatBPM));
 
   const danger = document.getElementById('danger');
   const dangerAmt = steve.hunting ? Math.max(0.15, Math.min(0.55, 1-dist/16)) : (dist<9 ? Math.max(0,(9-dist)/9)*0.25 : 0);
@@ -3953,6 +3973,7 @@ function render(){
   updateSprites(t);
   updateDecor(t);
   drawMinimap();
+  drawEcg(t);
   renderer.render(scene, camera);
 
   if(running && Math.random() < 0.01){
