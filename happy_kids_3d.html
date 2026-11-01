@@ -1377,6 +1377,7 @@ function makeCabinet(){
   return g;
 }
 let cabinets = [], cabinetRects = [], cabinetCells = new Set();
+let propRects = []; // playroom props you bump into (see PLAYROOM DECOR)
 function buildCabinets(){
   for(const c of cabinets) scene.remove(c);
   cabinets = []; cabinetRects = []; cabinetCells = new Set();
@@ -1844,7 +1845,7 @@ function nearbyWalls(x,z,range){
     if(x+range<w.x || x-range>w.x+w.w || z+range<w.z || z-range>w.z+w.d) continue;
     res.push(w);
   }
-  for(const w of cabinetRects){
+  for(const w of cabinetRects.concat(propRects)){
     if(x+range<w.x || x-range>w.x+w.w || z+range<w.z || z-range>w.z+w.d) continue;
     res.push(w);
   }
@@ -1859,8 +1860,9 @@ function resolveCircle(pos, radius){
       let dx = pos.x-cx, dz = pos.z-cz;
       let dist = Math.hypot(dx,dz);
       if(dist < radius){
-        if(dist===0){ dx=1; dz=0; dist=0.001; }
-        const push = radius-dist;
+        // centre inside the box (only after a teleport): nudge out sideways by a radius
+        const push = dist===0 ? radius : radius-dist;
+        if(dist===0){ dx=1; dz=0; dist=1; }
         pos.x += (dx/dist)*push;
         pos.z += (dz/dist)*push;
       }
@@ -2108,6 +2110,7 @@ function newGame(floor){
   buildMascots();
   buildNotes();
   buildFloorGoals();
+  buildDecor();
   resetScares();
   setExitLocked(!objectivesDone());
   const [sr,sc0] = pickSteveSpawn();
@@ -3474,6 +3477,186 @@ function makeBatteryCard(){
   return new THREE.Mesh(geo, mat);
 }
 
+/* ================= PLAYROOM DECOR (props/*.png) ================= */
+// The arcade was a kids' play centre. Painted props made in Canva stand along the
+// corridors (you bump into them), crayon drawings hang on the walls, plastic balls
+// lie scattered on the carpet and party bunting sags under the ceiling.
+// Props are cards that turn toward you like the characters, but only so far, so a
+// wide one never swings into the wall it stands against.
+// h = height in metres, a = aspect of the cropped image, r = footprint half-size, n = how common
+const PROP_TYPES = {
+  ballpit:  {h:0.95, a:1.64, r:0.6,  n:3},
+  slide:    {h:1.3,  a:1.47, r:0.55, n:2},
+  blocks:   {h:0.85, a:1.06, r:0.4,  n:3},
+  teddy:    {h:0.75, a:0.8,  r:0.3,  n:3},
+  horse:    {h:1.1,  a:1.36, r:0.5,  n:2},
+  balloons: {h:2.1,  a:0.47, r:0.3,  n:2},
+  kidcar:   {h:1.15, a:1.12, r:0.5,  n:2}
+};
+const PROP_TURN = 0.87; // how far (radians) a prop card turns from facing straight out of its wall
+const ART_W = 1.3, ART_H = 0.72, ART_Y = 1.97; // the crayon drawings, between the wall's two neon stripes
+const propTex = {}, propGeos = {}, propMats = {};
+for(const n of Object.keys(PROP_TYPES).concat('drawings')){
+  texLoader.load('props/'+n+'.png', tex=>{
+    propTex[n] = tex;
+    for(const p of props) if(p.type === n) addPropMesh(p);
+  }, undefined, ()=>{});
+}
+let props = [], decorMeshes = [];
+
+function addPropMesh(p){
+  const tex = propTex[p.type];
+  if(!tex || p.mesh) return;
+  if(!propGeos[p.type]){
+    if(p.type === 'drawings') propGeos[p.type] = new THREE.PlaneGeometry(ART_W, ART_H);
+    else {
+      const h = PROP_TYPES[p.type].h, geo = new THREE.PlaneGeometry(h * tex.image.width / tex.image.height, h);
+      geo.translate(0, h/2, 0);
+      propGeos[p.type] = geo;
+    }
+    // a faint glow of their own keeps the colours readable in the dark; the flashlight brings them out fully
+    propMats[p.type] = new THREE.MeshLambertMaterial({map:tex, transparent:true, alphaTest:0.35, side:THREE.DoubleSide,
+      emissive:0xffffff, emissiveMap:tex, emissiveIntensity:0.2});
+  }
+  p.mesh = new THREE.Mesh(propGeos[p.type], propMats[p.type]);
+  if(p.type === 'drawings'){ p.mesh.position.y = ART_Y; p.mesh.rotation.z = p.tilt; }
+  p.group.add(p.mesh);
+}
+
+function buildDecor(){
+  for(const p of props) scene.remove(p.group);
+  for(const m of decorMeshes){ scene.remove(m); m.geometry.dispose(); }
+  props = []; propRects = []; decorMeshes = [];
+  // keep clear of cells that already have something on a wall or to pick up
+  const busy = new Set(cabinetCells);
+  for(const p of tokens.concat(wallButtons, notes)) busy.add(p.r*COLS+p.c);
+  if(codePaper) busy.add(codePaper.r*COLS+codePaper.c);
+  const free = (r,c)=> r+c >= 3 && !(r===exitCell[0] && c===exitCell[1]) && !busy.has(r*COLS+c) && wallSides(r,c).length;
+  const place = (type, r, c, inset, along)=>{
+    const sides = wallSides(r,c);
+    const spot = wallSpot(r, c, sides[Math.floor(rng()*sides.length)], along, inset);
+    const g = new THREE.Group();
+    g.position.set(spot.x, 0, spot.z); g.rotation.y = spot.rot;
+    scene.add(g);
+    const p = {group:g, type, r, c, x:spot.x, z:spot.z, phase:rng()*6.28, tilt:(rng()-0.5)*0.08, mesh:null};
+    props.push(p); busy.add(r*COLS+c);
+    addPropMesh(p);
+    return p;
+  };
+
+  // standing props, a few cells apart from each other
+  const bag = [];
+  for(const n in PROP_TYPES) for(let i=0;i<PROP_TYPES[n].n;i++) bag.push(n);
+  const want = Math.min(30, Math.round(ROWS*COLS/18)), placed = [];
+  for(let tries=0; tries<want*15 && placed.length<want; tries++){
+    const r = Math.floor(rng()*ROWS), c = Math.floor(rng()*COLS);
+    if(!free(r,c) || placed.some(([a,b])=> Math.abs(a-r)+Math.abs(b-c) < 3)) continue;
+    const type = bag[Math.floor(rng()*bag.length)], pt = PROP_TYPES[type];
+    // far enough out that the card's edge stays clear of the wall when it turns
+    const inset = Math.max(pt.r, pt.h*pt.a/2*Math.sin(PROP_TURN)) + 0.05;
+    const p = place(type, r, c, inset, (rng()-0.5)*1.6);
+    placed.push([r,c]);
+    propRects.push({x:p.x-pt.r, z:p.z-pt.r, w:pt.r*2, d:pt.r*2});
+  }
+  // children's drawings taped to the walls
+  const artWant = Math.min(14, Math.round(ROWS*COLS/30));
+  for(let tries=0, n=0; tries<artWant*15 && n<artWant; tries++){
+    const r = Math.floor(rng()*ROWS), c = Math.floor(rng()*COLS);
+    if(!free(r,c)) continue;
+    place('drawings', r, c, 0.014, (rng()-0.5)*1.0);
+    n++;
+  }
+  buildBalls();
+  buildBunting();
+}
+
+// plastic balls from the ball pits, spilled around them and kicked down the corridors
+const BALL_COLORS = [0xe83a3a, 0xffd23a, 0x3a8cff, 0x4fd24f, 0xff2bd6, 0xff8a2b];
+function buildBalls(){
+  const pos = [];
+  const inCell = (r, c, x, z)=>{
+    const m = WT/2 + 0.12;
+    return [Math.max(c*CELL+m, Math.min((c+1)*CELL-m, x)), Math.max(r*CELL+m, Math.min((r+1)*CELL-m, z))];
+  };
+  for(const p of props){
+    if(p.type !== 'ballpit') continue;
+    // in front of the pit, toward the middle of the cell
+    const out = Math.atan2(Math.sin(p.group.rotation.y), Math.cos(p.group.rotation.y));
+    for(let i=0, n=5+Math.floor(rng()*5); i<n; i++){
+      const a = out + (rng()-0.5)*2.2, d = 0.75 + rng()*0.9;
+      pos.push(inCell(p.r, p.c, p.x + Math.sin(a)*d, p.z + Math.cos(a)*d));
+    }
+  }
+  for(let i=0, clusters=Math.round(ROWS*COLS/14); i<clusters; i++){
+    const r = Math.floor(rng()*ROWS), c = Math.floor(rng()*COLS);
+    if(r+c < 2) continue;
+    const cen = cellCenter(r,c), cx = cen.x + (rng()-0.5)*2.4, cz = cen.z + (rng()-0.5)*2.4;
+    for(let j=0, n=1+Math.floor(rng()*4); j<n; j++) pos.push(inCell(r, c, cx + (rng()-0.5)*0.7, cz + (rng()-0.5)*0.7));
+  }
+  if(!pos.length) return;
+  const R = 0.075;
+  const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(R, 10, 8), new THREE.MeshLambertMaterial(), pos.length);
+  const m = new THREE.Matrix4(), col = new THREE.Color();
+  pos.forEach(([x,z], i)=>{
+    mesh.setMatrixAt(i, m.makeTranslation(x, R, z));
+    mesh.setColorAt(i, col.setHex(BALL_COLORS[Math.floor(rng()*BALL_COLORS.length)]));
+  });
+  scene.add(mesh); decorMeshes.push(mesh);
+}
+
+// paper flag garlands strung across corridors just under the ceiling (one mesh for the whole floor)
+const FLAG_COLORS = [0xff2bd6, 0xffd23a, 0x3df2ff, 0x9d6bff, 0x7dff4a, 0xff6a3d];
+function buildBunting(){
+  const tri = [], cols = [], line = [];
+  const col = new THREE.Color();
+  const top = WALL_H - 0.3, FLAGS = 9;
+  for(let i=0, want=Math.min(24, Math.round(ROWS*COLS/12)), tries=0; i<want && tries<want*10; tries++){
+    const r = Math.floor(rng()*ROWS), c = Math.floor(rng()*COLS);
+    const cen = cellCenter(r,c), off = (rng()-0.5)*1.6;
+    let ax, az, bx, bz;
+    // a corridor cell: hang it between its two facing walls
+    if(hWalls[r][c] && hWalls[r+1][c]){ ax = bx = cen.x+off; az = r*CELL+WT/2; bz = (r+1)*CELL-WT/2; }
+    else if(vWalls[r][c] && vWalls[r][c+1]){ az = bz = cen.z+off; ax = c*CELL+WT/2; bx = (c+1)*CELL-WT/2; }
+    else continue;
+    i++;
+    const sag = 0.3 + rng()*0.25, dx = (bx-ax)/FLAGS, dz = (bz-az)/FLAGS, len = Math.hypot(dx, dz);
+    const ux = dx/len*0.13, uz = dz/len*0.13;
+    const yAt = f=> top - sag*4*f*(1-f);
+    for(let k=0;k<=FLAGS;k++){
+      if(k < FLAGS) line.push(ax+dx*k, yAt(k/FLAGS), az+dz*k, ax+dx*(k+1), yAt((k+1)/FLAGS), az+dz*(k+1));
+      if(k === FLAGS) break;
+      const f = (k+0.5)/FLAGS, px = ax+dx*(k+0.5), pz = az+dz*(k+0.5), py = yAt(f);
+      tri.push(px-ux, py, pz-uz,  px+ux, py, pz+uz,  px, py-0.3, pz);
+      col.setHex(FLAG_COLORS[Math.floor(rng()*FLAG_COLORS.length)]);
+      for(let v=0;v<3;v++) cols.push(col.r, col.g, col.b);
+    }
+  }
+  if(!tri.length) return;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(tri, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  geo.computeVertexNormals();
+  const flags = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({vertexColors:true, side:THREE.DoubleSide}));
+  const lgeo = new THREE.BufferGeometry();
+  lgeo.setAttribute('position', new THREE.Float32BufferAttribute(line, 3));
+  const strings = new THREE.LineSegments(lgeo, new THREE.LineBasicMaterial({color:0x6a5a7a}));
+  scene.add(flags, strings); decorMeshes.push(flags, strings);
+}
+
+function updateDecor(t){
+  for(const p of props){
+    const m = p.mesh;
+    if(!m || p.type === 'drawings') continue;
+    if(Math.abs(camera.position.x - p.x) > 22 || Math.abs(camera.position.z - p.z) > 22) continue;
+    let a = Math.atan2(camera.position.x - p.x, camera.position.z - p.z) - p.group.rotation.y;
+    a = Math.atan2(Math.sin(a), Math.cos(a));
+    m.rotation.y = Math.max(-PROP_TURN, Math.min(PROP_TURN, a));
+    // every now and then the rocking horse starts rocking by itself
+    if(p.type === 'horse') m.rotation.z = Math.sin(t*1.7 + p.phase) * 0.07 * Math.max(0, Math.sin(t*0.11 + p.phase));
+    else if(p.type === 'balloons'){ m.position.y = Math.sin(t*0.9 + p.phase)*0.05; m.rotation.z = Math.sin(t*0.6 + p.phase)*0.03; }
+  }
+}
+
 /* ================= SURFACE TEXTURES (textures/*.jpg) ================= */
 // Painted wall, cabinet side art and token face made in Canva; each falls back
 // to the procedural canvas texture if it can't load.
@@ -3768,6 +3951,7 @@ function render(){
   animateMascots(t);
   animateShadowRunner(t);
   updateSprites(t);
+  updateDecor(t);
   drawMinimap();
   renderer.render(scene, camera);
 
