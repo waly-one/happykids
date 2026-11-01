@@ -110,6 +110,7 @@
     font-family:'Special Elite',monospace;
   }
 
+  #fadeBlack{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;z-index:30;}
   #ecgWrap{
     position:absolute;bottom:18px;left:18px;color:var(--green);
     background:rgba(5,4,1,.55);border:1px solid #4a3f18;padding:6px 10px 2px;
@@ -293,6 +294,7 @@
 <div id="staticFlash"></div>
 <div id="lookzone"></div>
 <div id="handprints"></div>
+<div id="fadeBlack"></div>
 <div id="jumpscare" class="hidden"><div class="face"></div><div class="noise"></div></div>
 
 <div id="hud" class="hidden">
@@ -1185,13 +1187,11 @@ const flashTarget = new THREE.Object3D();
 scene.add(flashlight, flashTarget);
 flashlight.target = flashTarget;
 
-const exitLight = new THREE.PointLight(0x4fff5a, 1.5, 8, 2);
+// glows up out of the stairwell (see EXIT STAIRWELL)
+const exitLight = new THREE.PointLight(0x4fff5a, 1.6, 7, 2);
 scene.add(exitLight);
-const exitMarker = new THREE.Mesh(new THREE.CircleGeometry(1.2,24), new THREE.MeshBasicMaterial({color:0x2fff3a, transparent:true, opacity:0.35}));
-exitMarker.rotation.x = -Math.PI/2;
-scene.add(exitMarker);
 
-// resize floor, ceiling and exit to the current maze dimensions
+// resize floor and ceiling to the current maze dimensions
 function resizeArena(rows, cols){
   ROWS = rows; COLS = cols;
   exitCell = [ROWS-1, COLS-1];
@@ -1200,11 +1200,200 @@ function resizeArena(rows, cols){
     m.position.set(COLS*CELL/2, m === ceilMesh ? WALL_H : 0, ROWS*CELL/2);
   }
   updateSurfaceRepeat();
-  const ec = cellCenter(exitCell[0], exitCell[1]);
-  exitLight.position.set(ec.x, 1.2, ec.z);
-  exitMarker.position.set(ec.x, 0.02, ec.z);
 }
 resizeArena(ROWS, COLS);
+
+// the floor as one sheet with a rectangular opening for the stairwell (hole in world metres);
+// built in the unit plane's own coordinates, so its scale, rotation and texture repeat stay as they are
+function setFloorHole(hole){
+  const W = COLS*CELL, D = ROWS*CELL, pos = [], uv = [];
+  const quad = (xa, xb, za, zb)=>{
+    if(xb <= xa || zb <= za) return;
+    const L = xa/W-0.5, R = xb/W-0.5, T = 0.5-za/D, B = 0.5-zb/D;
+    pos.push(L,T,0, L,B,0, R,B,0,  L,T,0, R,B,0, R,T,0);
+    uv.push(L+0.5,T+0.5, L+0.5,B+0.5, R+0.5,B+0.5,  L+0.5,T+0.5, R+0.5,B+0.5, R+0.5,T+0.5);
+  };
+  quad(0, W, 0, hole.z0); quad(0, W, hole.z1, D);
+  quad(0, hole.x0, hole.z0, hole.z1); quad(hole.x1, W, hole.z0, hole.z1);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.computeVertexNormals();
+  floorMesh.geometry.dispose();
+  floorMesh.geometry = geo;
+}
+
+/* ================= EXIT STAIRWELL ================= */
+// The way down to the next floor: a stairwell in the exit cell, entered from its open
+// side, with neon-edged steps sinking into the dark and a sign on the wall above.
+// A grate (red light) closes it until the floor's goals are done, then swings open
+// downward; walking into the exit cell then takes you down the stairs.
+// Distances along the stairs are measured from the cell edge you enter by.
+// gentle enough that the steps show from a few metres back, not just from the edge
+const STAIR = {w:1.8, start:0.95, steps:8, rise:0.2, depth:2.6};
+const stairMats = {
+  step: new THREE.MeshStandardMaterial({color:0x4a3e5c, roughness:0.85}),
+  pit: new THREE.MeshStandardMaterial({color:0x160e24, roughness:1}),
+  rail: new THREE.MeshStandardMaterial({color:0x9a96aa, roughness:0.35, metalness:0.7}),
+  edge: new THREE.MeshBasicMaterial({color:0xff2b4a}),   // neon strip along every step's edge
+  dark: new THREE.MeshBasicMaterial({color:0x000000})
+};
+const grateTex = makeCanvasTex((g,s)=>{
+  g.clearRect(0,0,s,s);
+  g.strokeStyle = '#8a8698'; g.lineWidth = 5;
+  for(let i=0;i<=s;i+=16){ g.beginPath(); g.moveTo(i,0); g.lineTo(i,s); g.stroke(); g.beginPath(); g.moveTo(0,i); g.lineTo(s,i); g.stroke(); }
+}, 128);
+const grateMat = new THREE.MeshStandardMaterial({map:grateTex, alphaTest:0.5, side:THREE.DoubleSide, roughness:0.5, metalness:0.6});
+const signCanvas = document.createElement('canvas'); signCanvas.width = 512; signCanvas.height = 128;
+const signTex = new THREE.CanvasTexture(signCanvas);
+let stairGroup = null, stairInfo = null, grateHinges = [], grateOpen = 0;
+
+function buildStairs(){
+  if(stairGroup) scene.remove(stairGroup);
+  const [R, C] = exitCell;
+  // enter from an open side; the stairs run down toward the opposite (outer) wall
+  const open = [];
+  if(!hWalls[R][C]) open.push('up');
+  if(!vWalls[R][C]) open.push('left');
+  const from = open.length ? open[Math.floor(rng()*open.length)] : 'up';
+  const fromUp = from === 'up';
+  const s = {
+    dx: fromUp ? 0 : 1, dz: fromUp ? 1 : 0,           // down the stairs
+    sx: fromUp ? 1 : 0, sz: fromUp ? 0 : 1,           // across them
+    ox: fromUp ? C*CELL + CELL/2 : C*CELL, oz: fromUp ? R*CELL : R*CELL + CELL/2,
+    end: CELL - WT/2
+  };
+  s.at = (a, b)=> ({x: s.ox + s.dx*a + s.sx*b, z: s.oz + s.dz*a + s.sz*b});
+  s.run = (s.end - STAIR.start) / STAIR.steps;
+  stairInfo = s;
+  const w = STAIR.w, len = s.end - STAIR.start, mid = STAIR.start + len/2, D = STAIR.depth;
+
+  const g = new THREE.Group();
+  g.position.set(s.ox, 0, s.oz);
+  g.rotation.y = fromUp ? 0 : Math.PI/2;   // local +z = down the stairs
+  const box = (sx, sy, sz, x, y, z, mat)=>{ const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat); m.position.set(x, y, z); g.add(m); return m; };
+  const plane = (pw, ph, x, y, z, ry, mat)=>{ const m = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), mat); m.position.set(x, y, z); m.rotation.y = ry; g.add(m); return m; };
+  for(let i=0;i<STAIR.steps;i++){
+    const top = -(i+1)*STAIR.rise, z0 = STAIR.start + i*s.run;
+    box(w, STAIR.rise, s.run, 0, top - STAIR.rise/2, z0 + s.run/2, stairMats.step);
+    box(w, 0.03, 0.05, 0, top + 0.016, z0 + s.run - 0.03, stairMats.edge); // on the edge you step down from
+  }
+  // the shaft: side walls, the wall under the entry edge, and at the far end a black opening
+  // where the stairs carry on down under the wall
+  plane(len, D, -w/2, -D/2, mid,  Math.PI/2, stairMats.pit);
+  plane(len, D,  w/2, -D/2, mid, -Math.PI/2, stairMats.pit);
+  plane(w, D, 0, -D/2, STAIR.start, 0, stairMats.pit);
+  plane(w, D, 0, -D/2, s.end - 0.01, Math.PI, stairMats.dark);
+  // neon handrails running down the shaft walls with the steps: from across the room they
+  // read as a staircase even when the steps themselves are hidden below the edge
+  const drop = STAIR.steps*STAIR.rise, slope = Math.atan2(drop, len);
+  for(const side of [-1, 1]){
+    const r = box(0.04, 0.04, Math.hypot(len, drop), side*(w/2 - 0.05), 0.85 - drop/2, mid, stairMats.edge);
+    r.rotation.x = slope; // far end down
+  }
+  // handrails on both long sides
+  for(const side of [-1, 1]){
+    const x = side*(w/2 + 0.06);
+    const rail = box(0.05, 0.05, len, x, 0.95, mid, stairMats.rail);
+    rail.geometry.dispose(); rail.geometry = new THREE.CylinderGeometry(0.025, 0.025, len, 8); rail.rotation.x = Math.PI/2;
+    for(const z of [STAIR.start + 0.05, mid, s.end - 0.05]) box(0.05, 0.95, 0.05, x, 0.475, z, stairMats.rail);
+  }
+  // the grate: two halves hinged at the long edges, swinging down into the shaft when it opens
+  grateHinges = [-1, 1].map(side=>{
+    const hinge = new THREE.Group();
+    hinge.position.set(side*w/2, 0.015, mid);
+    const half = new THREE.Mesh(new THREE.PlaneGeometry(w/2, len), grateMat);
+    half.rotation.x = -Math.PI/2;
+    half.position.x = -side*w/4;
+    hinge.add(half);
+    hinge.userData.side = side;
+    g.add(hinge);
+    return hinge;
+  });
+  grateOpen = 0;
+  // the neon sign on the wall above the stairs
+  const sign = plane(1.7, 0.425, 0, 2.3, s.end - 0.02, Math.PI, new THREE.MeshBasicMaterial({map:signTex, transparent:true}));
+  sign.renderOrder = 1;
+  scene.add(g);
+  stairGroup = g;
+
+  const a = s.at(STAIR.start, -w/2), b = s.at(s.end, w/2);
+  setFloorHole({x0:Math.min(a.x,b.x), x1:Math.max(a.x,b.x), z0:Math.min(a.z,b.z), z1:Math.max(a.z,b.z)});
+  const lp = s.at(mid, 0);
+  exitLight.position.set(lp.x, -0.5, lp.z); // lights the steps from inside the shaft
+}
+
+// colours and sign text for the exit's state: locked (red), waiting for the code (amber), open (green)
+function updateStairs(){
+  const state = exitLocked ? 'locked' : codeNeeded ? 'code' : 'open';
+  const col = {locked:'#ff2b4a', code:'#ffb02b', open:'#2fff3a'}[state];
+  stairMats.edge.color.set(col);
+  exitLight.color.set(col);
+  const g = signCanvas.getContext('2d');
+  g.clearRect(0,0,512,128);
+  g.fillStyle = 'rgba(8,4,16,0.85)'; g.fillRect(4,4,504,120);
+  g.strokeStyle = col; g.lineWidth = 6; g.shadowColor = col; g.shadowBlur = 18; g.strokeRect(10,10,492,108);
+  g.fillStyle = col; g.font = '64px "VT323", monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(state === 'locked' ? 'ZAMČENO' : state === 'code' ? 'ZADEJ KÓD' : 'PATRO '+(level+1), 256, 66);
+  if(state === 'open') for(const x of [70, 442]){ // arrows pointing down the stairs
+    g.beginPath(); g.moveTo(x-22, 46); g.lineTo(x+22, 46); g.lineTo(x, 84); g.closePath(); g.fill();
+  }
+  g.shadowBlur = 0;
+  signTex.needsUpdate = true;
+}
+// the grate swings open over a second once the exit unlocks
+function animateGrate(dt){
+  const target = exitLocked ? 0 : 1;
+  if(grateOpen === target) return;
+  grateOpen = target ? Math.min(1, grateOpen + dt) : 0;
+  const ang = (1 - Math.cos(grateOpen*Math.PI))/2 * Math.PI/2;
+  for(const h of grateHinges) h.rotation.z = h.userData.side * ang;
+}
+
+// escaping: the game stops, you walk to the top of the stairs, turn and go down into the dark
+const DESCENT_TIME = 2.2;
+const fadeEl = document.getElementById('fadeBlack');
+let descent = null;
+function startDescent(){
+  if(descent || gameEnded) return;
+  running = false;
+  for(const k in keys) keys[k] = false;
+  releaseJoy();
+  if(isLocked()) document.exitPointerLock();
+  lockhint.classList.add('hidden');
+  descent = {t0: performance.now()/1000, x:player.x, z:player.z, yaw, pitch, nextStep:0.25};
+}
+function updateDescent(t){
+  const s = stairInfo, k = Math.min(1, (t - descent.t0)/DESCENT_TIME);
+  const ease = f=> (1 - Math.cos(Math.min(1, Math.max(0, f))*Math.PI))/2;
+  const top = s.at(STAIR.start - 0.3, 0), bottom = s.at(s.end - 0.3, 0); // into the dark doorway under the far wall
+  const downYaw = Math.atan2(-s.dx, -s.dz); // facing down the stairs
+  const turn = Math.atan2(Math.sin(downYaw - descent.yaw), Math.cos(downYaw - descent.yaw));
+  if(k < 0.3){
+    const f = ease(k/0.3);
+    player.x = descent.x + (top.x - descent.x)*f; player.z = descent.z + (top.z - descent.z)*f;
+    yaw = descent.yaw + turn*f;
+    pitch = descent.pitch + (-0.3 - descent.pitch)*f;
+  } else {
+    const f = (k - 0.3)/0.7;
+    player.x = top.x + (bottom.x - top.x)*f; player.z = top.z + (bottom.z - top.z)*f;
+    yaw = downYaw; pitch = -0.3;
+    // follow the slope of the steps, with a small bob per step
+    const along = (player.x - s.ox)*s.dx + (player.z - s.oz)*s.dz;
+    eyeH = EYE_H - Math.max(0, along - STAIR.start)/s.run*STAIR.rise - Math.abs(Math.sin(f*Math.PI*STAIR.steps/2))*0.05;
+  }
+  // footsteps on the way down
+  if(actx && t - descent.t0 > descent.nextStep){
+    descent.nextStep += 0.32;
+    const st = pickSound('step');
+    if(st) playBuffer(st, masterGain, 0.3, 1.05); else thump(0.12);
+  }
+  fadeEl.style.opacity = Math.min(1, Math.max(0, (k - 0.6)/0.35)).toFixed(2);
+  if(k >= 1){
+    descent = null;
+    endGame(true);
+  }
+}
 
 let wallMesh = null;
 function buildWallMesh(){
@@ -2057,8 +2246,7 @@ let exitLocked = true, lastLockedMsg = -99;
 // the exit is red while tokens or buttons are missing, amber while it still wants the code, green when open
 function setExitLocked(locked){
   exitLocked = locked;
-  exitMarker.material.color.setHex(locked ? 0xff2b4a : codeNeeded ? 0xffb02b : 0x2fff3a);
-  exitLight.color.setHex(locked ? 0xff2b4a : codeNeeded ? 0xffb02b : 0x4fff5a);
+  updateStairs();
   updateObjective();
 }
 function objectivesDone(){ return tokensFound >= tokensNeeded && buttonsPressed >= buttonsNeeded; }
@@ -2118,6 +2306,7 @@ function newGame(floor){
   rng = mulberry32((Math.random()*4294967296)>>>0);
   genMaze();
   buildWallMesh();
+  buildStairs();
   buildFixtureLights();
   buildKids();
   buildCabinets();
@@ -2143,6 +2332,7 @@ function newGame(floor){
   document.getElementById('tbCrouch').classList.remove('on');
   releaseJoy();
   crouching = false; playerHidden = false; eyeH = EYE_H; lastLockedMsg = -99;
+  descent = null; fadeEl.style.opacity = 0;
   pickPatrolTarget(performance.now()/1000);
   player = { x: CELL/2, z: CELL/2 };
   yaw = 0; pitch = 0;
@@ -2462,6 +2652,7 @@ function step(dt,t){
   }
   checkWallButtons();
   checkCodePaper();
+  animateGrate(dt);
   resolveCircle(player, PR);
   player.x = Math.max(PR, Math.min(COLS*CELL-PR, player.x));
   player.z = Math.max(PR, Math.min(ROWS*CELL-PR, player.z));
@@ -2558,7 +2749,7 @@ function step(dt,t){
   if(dist < PR+0.45){ caught('steve'); return; }
   const [pr,pc] = cellAt(player.x,player.z);
   if(pr===exitCell[0] && pc===exitCell[1]){
-    if(!exitLocked && !codeNeeded) endGame(true);
+    if(!exitLocked && !codeNeeded){ startDescent(); return; }
     else if(!exitLocked && codeFound){ if(t > kpRearmAt) openKeypad(); }
     else if(t - lastLockedMsg > 3){
       lastLockedMsg = t;
@@ -3043,7 +3234,7 @@ function keypadPress(k){
       kpBusy = false; keypadOpen = false;
       keypadScreen.classList.add('hidden');
       paused = false;
-      endGame(true);
+      startDescent();
     }, 700);
   } else {
     renderKeypad('bad');
@@ -3893,6 +4084,7 @@ function drawMinimap(){
 function render(){
   if(!player){ renderer.render(scene,camera); return; }
   const t = performance.now()/1000;
+  if(descent) updateDescent(t);
   if(t - lastScreenT > 0.4){ lastScreenT = t; redrawScreens(); }
 
   const bob = (playerMoving && running && !paused) ? Math.sin(bobPhase)*0.035 : 0;
