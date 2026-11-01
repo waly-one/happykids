@@ -258,6 +258,20 @@
     box-shadow:0 0 0 1px #b8a77a, 0 12px 40px rgba(0,0,0,.7);
   }
   .noteHead{font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#7a5a30;margin-bottom:12px;}
+  .codeBig{font-family:'VT323',monospace;font-size:56px;letter-spacing:8px;text-align:center;color:#1a1440;margin:8px 0 4px;}
+  #keypadscreen{background:rgba(5,2,12,.82);}
+  .keypad{padding:16px 20px 18px;background:#120a24;border:2px solid #2c1f52;box-shadow:0 0 30px rgba(61,242,255,.18);}
+  .keypad .noteHead{color:#8f84d6;margin-bottom:6px;text-align:center;}
+  #kpDisplay{font-family:'VT323',monospace;font-size:40px;letter-spacing:6px;color:var(--yellow-bright);background:#05020c;
+    border:1px solid #2c1f52;padding:0 12px;margin-bottom:10px;text-align:center;}
+  #kpDisplay.bad{color:var(--red);animation:kpShake .35s;}
+  #kpDisplay.ok{color:#2fff3a;}
+  @keyframes kpShake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+  .kpGrid{display:grid;grid-template-columns:repeat(3,64px);gap:8px;}
+  .kpGrid button{height:46px;font-family:'VT323',monospace;font-size:28px;color:#e8dcc0;cursor:pointer;
+    background:rgba(61,242,255,.06);border:1px solid rgba(143,132,214,.75);}
+  .kpGrid button:active{background:rgba(61,242,255,.35);}
+  .kpGrid button.small{font-size:18px;letter-spacing:1px;text-transform:uppercase;}
   .rotIcon{font-size:64px;animation:rotHint 1.8s ease-in-out infinite;}
   @keyframes rotHint{0%,30%{transform:rotate(0)}60%,100%{transform:rotate(-90deg)}}
 </style>
@@ -305,7 +319,8 @@
     <b>„Vidím tě.“</b><br><br>
     <span class="only-desktop">Pohyb: <b>WASD</b> / šipky, <b>Shift</b> = sprint (Steve ho uslyší), <b>C</b> = přikrčit se. Rozhlížení: <b>myší</b> (klikni do hry, Esc uvolní kurzor).</span>
     <span class="only-touch">Ovládání: <b>levý palec</b> = chůze, <b>pravý palec</b> = rozhlížení, tlačítka vpravo dole = <b>sprint</b> (Steve ho uslyší) a <b>přikrčení</b>. Hraj na šířku.</span>
-    Východ je zamčený — sesbírej <b>3 žetony</b> schované ve slepých uličkách. Baterka vydrží jen chvíli — sbírej svítící <b>baterie</b>, jinak se ponoříš do <b>úplné tmy</b>, kde jsou děti odvážnější.
+    Východ je zamčený — sesbírej <b>3 žetony</b> schované ve slepých uličkách. Od <b>2. patra</b> musíš navíc zmáčknout
+    <b>3 tlačítka</b> na zdech a od <b>3. patra</b> najít na zemi <b>papír s kódem</b> a zadat ho u východu. Baterka vydrží jen chvíli — sbírej svítící <b>baterie</b>, jinak se ponoříš do <b>úplné tmy</b>, kde jsou děti odvážnější.
     Když tě něco uvidí, utíkej a zahni za roh — sprintem utečeš každému, jen ne napořád.
     Přikrčený u automatu jsi <b>schovaný</b> a Steve tě nevidí. Poslouchej jeho kroky — a hihňání dětí.
     Každý útěk tě zavede o <b>patro níž</b>: větší bludiště, rychlejší Steve, víc dětí.
@@ -319,7 +334,7 @@
     <button class="playbtn diffbtn active" data-diff="medium" style="padding:10px 22px;font-size:14px;">Střední</button>
     <button class="playbtn diffbtn" data-diff="hard" style="padding:10px 22px;font-size:14px;">Těžká</button>
   </div>
-  <div class="sub" style="margin:-14px 0 24px;letter-spacing:1px;text-transform:none;font-size:12px;">Na Snadné ukazuje minimapa od začátku, kde leží všechny žetony.</div>
+  <div class="sub" style="margin:-14px 0 24px;letter-spacing:1px;text-transform:none;font-size:12px;">Na Snadné ukazuje minimapa od začátku, kde leží všechny žetony, tlačítka a papír s kódem.</div>
   <div id="mouseSection">
     <div class="sub" style="margin-bottom:10px;">Rozhlížení myší</div>
     <div style="display:flex;gap:10px;margin-bottom:26px;flex-wrap:wrap;justify-content:center;">
@@ -340,6 +355,19 @@
     <div class="noteHead hidden" id="noteSecret" style="margin-top:16px;">Máš všechny poznámky. Uteč z patra — čeká tě tajný konec.</div>
   </div>
   <button class="playbtn" id="noteClose" style="margin-top:24px;">Pokračovat</button>
+</div>
+
+<div class="screen hidden" id="keypadscreen">
+  <div class="keypad">
+    <div class="noteHead">Východ · zadej kód</div>
+    <div id="kpDisplay">_ _ _ _</div>
+    <div class="kpGrid">
+      <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+      <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+      <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+      <button data-k="del" class="small">Smaž</button><button data-k="0">0</button><button data-k="back" class="small">Zpět</button>
+    </div>
+  </div>
 </div>
 
 <div class="screen hidden" id="rotatescreen">
@@ -1443,6 +1471,9 @@ const tokenLights = Array.from({length:TOKEN_COUNT}, ()=>{
   return l;
 });
 let batteries = [], tokens = [], tokensFound = 0, tokensNeeded = 0;
+// floor 2+: wall buttons, floor 3+: the door code (see FLOOR GOALS)
+let wallButtons = [], buttonsPressed = 0, buttonsNeeded = 0;
+let codePaper = null, doorCode = '', codeFound = false, codeNeeded = false;
 
 // random cells far enough from the start and from each other; tokens prefer
 // dead ends so the player has to explore the side corridors to find them
@@ -1602,6 +1633,13 @@ const keys = {};
 window.addEventListener('keydown', e=>{
   if(e.target && e.target.tagName === 'INPUT') return;
   const key = e.key.toLowerCase();
+  if(keypadOpen){
+    if(/^[0-9]$/.test(key)) keypadPress(key);
+    else if(key === 'backspace') keypadPress('del');
+    else if(key === 'escape') keypadPress('back');
+    e.preventDefault();
+    return;
+  }
   if(key === 'p' && !e.repeat){ paused ? resumeGame() : pauseGame(); return; }
   if(key === 'escape'){ pauseGame(); return; }
   keys[key] = true;
@@ -1999,16 +2037,53 @@ function pickSteveSpawn(){
 }
 
 let exitLocked = true, lastLockedMsg = -99;
+// the exit is red while tokens or buttons are missing, amber while it still wants the code, green when open
 function setExitLocked(locked){
   exitLocked = locked;
-  exitMarker.material.color.setHex(locked ? 0xff2b4a : 0x2fff3a);
-  exitLight.color.setHex(locked ? 0xff2b4a : 0x4fff5a);
+  exitMarker.material.color.setHex(locked ? 0xff2b4a : codeNeeded ? 0xffb02b : 0x2fff3a);
+  exitLight.color.setHex(locked ? 0xff2b4a : codeNeeded ? 0xffb02b : 0x4fff5a);
   updateObjective();
 }
+function objectivesDone(){ return tokensFound >= tokensNeeded && buttonsPressed >= buttonsNeeded; }
+// on Hard the code isn't kept on screen: you have to remember it
+function codeShown(){ return difficulty === 'hard' ? '' : ' '+doorCode; }
 function updateObjective(){
-  document.getElementById('objective').textContent = exitLocked
-    ? 'Cíl: najdi žetony ■ '+tokensFound+'/'+tokensNeeded
-    : 'Cíl: utíkej k východu ■';
+  let txt;
+  if(!exitLocked){
+    txt = !codeNeeded ? 'Cíl: utíkej k východu ■'
+      : codeFound ? 'Cíl: zadej kód u východu ■'+codeShown() : 'Cíl: najdi papír s kódem ■';
+  } else if(!buttonsNeeded && !codeNeeded){
+    txt = 'Cíl: najdi žetony ■ '+tokensFound+'/'+tokensNeeded;
+  } else {
+    const parts = ['žetony '+tokensFound+'/'+tokensNeeded];
+    if(buttonsNeeded) parts.push('tlačítka '+buttonsPressed+'/'+buttonsNeeded);
+    if(codeNeeded) parts.push(codeFound ? (difficulty === 'hard' ? 'kód ✓' : 'kód '+doorCode) : 'kód ?');
+    txt = 'Cíl: '+parts.join(' · ');
+  }
+  document.getElementById('objective').textContent = txt;
+}
+// a token or a button: either the exit unlocks now, or show how far along you are
+function progressMade(msg, chime){
+  if(exitLocked && objectivesDone()){
+    setExitLocked(false);
+    haptic([60,60,120]);
+    pickupChime([523, 659, 784, 1047]);
+    showSubtitle(!codeNeeded ? 'Východ je otevřený!' : codeFound ? 'Teď zadej kód u východu' : 'Ještě kód — hledej papír na zemi', true);
+  } else {
+    updateObjective();
+    pickupChime(chime);
+    showSubtitle(msg, true);
+    haptic(40);
+  }
+}
+function lockedMsg(){
+  const miss = [];
+  if(tokensFound < tokensNeeded) miss.push('žetony '+tokensFound+'/'+tokensNeeded);
+  if(buttonsPressed < buttonsNeeded) miss.push('tlačítka '+buttonsPressed+'/'+buttonsNeeded);
+  // both missing: drop the prefix so the line still fits on a phone
+  if(miss.length < 2) return 'Zamčeno — '+miss[0];
+  const s = miss.join(' · ');
+  return s[0].toUpperCase() + s.slice(1);
 }
 function nearCabinet(x, z, radius){
   for(const w of cabinetRects){
@@ -2032,8 +2107,9 @@ function newGame(floor){
   buildPickups();
   buildMascots();
   buildNotes();
+  buildFloorGoals();
   resetScares();
-  setExitLocked(tokensNeeded > 0);
+  setExitLocked(!objectivesDone());
   const [sr,sc0] = pickSteveSpawn();
   const sc = cellCenter(sr, sc0);
   const diff = DIFFICULTIES[difficulty] || DIFFICULTIES.medium;
@@ -2063,6 +2139,10 @@ function newGame(floor){
   setHeartTarget(72);
   if(heartTimer) clearTimeout(heartTimer);
   tickHeart();
+  // the floor where a new goal first appears says so
+  const intro = level === 2 ? 'Nové: zmáčkni 3 tlačítka na zdech' : level === 3 ? 'Nové: najdi kód na papíře na zemi' : '';
+  const introLevel = level;
+  if(intro) setTimeout(()=>{ if(running && !gameEnded && level === introLevel && elapsed < 6) showSubtitle(intro, true); }, 1800);
 }
 
 function advanceSteve(dt,t){
@@ -2360,18 +2440,10 @@ function step(dt,t){
     tk.taken = true; tk.group.visible = false;
     tokenLights[tokens.indexOf(tk)].intensity = 0;
     tokensFound++;
-    if(tokensFound >= tokensNeeded){
-      setExitLocked(false);
-      haptic([60,60,120]);
-      pickupChime([523, 659, 784, 1047]);
-      showSubtitle('Východ je otevřený!', true);
-    } else {
-      updateObjective();
-      pickupChime([784, 1175]);
-      showSubtitle('Žeton '+tokensFound+'/'+tokensNeeded, true);
-      haptic(40);
-    }
+    progressMade('Žeton '+tokensFound+'/'+tokensNeeded, [784, 1175]);
   }
+  checkWallButtons();
+  checkCodePaper();
   resolveCircle(player, PR);
   player.x = Math.max(PR, Math.min(COLS*CELL-PR, player.x));
   player.z = Math.max(PR, Math.min(ROWS*CELL-PR, player.z));
@@ -2463,22 +2535,26 @@ function step(dt,t){
   if(dist < PR+0.45){ caught('steve'); return; }
   const [pr,pc] = cellAt(player.x,player.z);
   if(pr===exitCell[0] && pc===exitCell[1]){
-    if(!exitLocked) endGame(true);
+    if(!exitLocked && !codeNeeded) endGame(true);
+    else if(!exitLocked && codeFound){ if(t > kpRearmAt) openKeypad(); }
     else if(t - lastLockedMsg > 3){
       lastLockedMsg = t;
-      showSubtitle('Zamčeno — žetony '+tokensFound+'/'+tokensNeeded, true);
+      showSubtitle(exitLocked ? lockedMsg() : 'Chybí kód — hledej papír na zemi', true);
     }
-  }
+  } else kpRearmAt = 0;
 
   explored.add(pr*COLS+pc);
   for(const [nr,nc] of neighborsOf(pr,pc)) explored.add(nr*COLS+nc);
-  // pickups you've spotted (in a straight corridor, or on explored ground) get drawn on the minimap
-  for(const p of tokens.concat(batteries)){
+  // things you've spotted (in a straight corridor, or on explored ground) get drawn on the minimap
+  for(const p of tokens.concat(batteries, wallButtons, codePaper ? [codePaper] : [])){
     if(p.seen || p.taken) continue;
-    const near = Math.hypot(player.x-p.x, player.z-p.z) < CELL*5 && hasLineOfSight(player, p);
+    const cen = cellCenter(p.r, p.c); // buttons sit on a wall face, so look at their cell
+    const near = Math.hypot(player.x-cen.x, player.z-cen.z) < CELL*5 && hasLineOfSight(player, cen);
     if(!near && !explored.has(p.r*COLS+p.c)) continue;
     p.seen = true;
     if(p.kind === 'token') showSubtitle('Žeton zakreslen do mapy', true);
+    else if(p.kind === 'button') showSubtitle('Tlačítko zakresleno do mapy', true);
+    else if(p.kind === 'paper') showSubtitle('Papír zakreslen do mapy', true);
   }
 
   elapsed += dt;
@@ -2700,26 +2776,33 @@ function buildNotes(){
     const r = Math.floor(rng()*ROWS), c = Math.floor(rng()*COLS);
     if(fromStart[r][c] < 4 || cabinetCells.has(r*COLS+c)) continue;
     if(cells.some(([a,b])=> Math.abs(a-r)+Math.abs(b-c) < 5)) continue;
-    const sides = [];
-    if(hWalls[r][c]) sides.push('up');
-    if(hWalls[r+1][c]) sides.push('down');
-    if(vWalls[r][c]) sides.push('left');
-    if(vWalls[r][c+1]) sides.push('right');
+    const sides = wallSides(r,c);
     if(!sides.length) continue;
     cells.push([r,c]);
-    const side = sides[Math.floor(rng()*sides.length)];
-    const cen = cellCenter(r,c), face = WT/2 + 0.012, off = (rng()-0.5)*1.4;
+    const spot = wallSpot(r, c, sides[Math.floor(rng()*sides.length)], (rng()-0.5)*1.4, 0.012);
     const mesh = new THREE.Mesh(noteGeo, noteMat);
-    let x, z;
-    if(side==='up'){ x = cen.x+off; z = r*CELL+face; mesh.rotation.y = 0; }
-    else if(side==='down'){ x = cen.x+off; z = (r+1)*CELL-face; mesh.rotation.y = Math.PI; }
-    else if(side==='left'){ x = c*CELL+face; z = cen.z+off; mesh.rotation.y = Math.PI/2; }
-    else { x = (c+1)*CELL-face; z = cen.z+off; mesh.rotation.y = -Math.PI/2; }
+    mesh.rotation.y = spot.rot;
     mesh.rotation.z = (rng()-0.5)*0.2;
-    mesh.position.set(x, 1.45, z);
+    mesh.position.set(spot.x, 1.45, spot.z);
     scene.add(mesh);
-    notes.push({mesh, x, z, taken:false});
+    notes.push({mesh, r, c, x:spot.x, z:spot.z, taken:false});
   }
+}
+function wallSides(r,c){
+  const sides = [];
+  if(hWalls[r][c]) sides.push('up');
+  if(hWalls[r+1][c]) sides.push('down');
+  if(vWalls[r][c]) sides.push('left');
+  if(vWalls[r][c+1]) sides.push('right');
+  return sides;
+}
+// a point on the face of one of a cell's walls, and the turn that faces it into the cell
+function wallSpot(r, c, side, off, inset){
+  const cen = cellCenter(r,c), face = WT/2 + inset;
+  if(side==='up') return {x:cen.x+off, z:r*CELL+face, rot:0};
+  if(side==='down') return {x:cen.x+off, z:(r+1)*CELL-face, rot:Math.PI};
+  if(side==='left') return {x:c*CELL+face, z:cen.z+off, rot:Math.PI/2};
+  return {x:(c+1)*CELL-face, z:cen.z+off, rot:-Math.PI/2};
 }
 function checkNotes(){
   for(const n of notes){
@@ -2735,14 +2818,18 @@ function checkNotes(){
 }
 const noteScreen = document.getElementById('notescreen');
 function openNote(i){
+  document.getElementById('noteText').textContent = NOTES[i][1];
+  document.getElementById('noteSecret').classList.toggle('hidden', i !== NOTES.length-1);
+  showPaperScreen('Poznámka '+(i+1)+'/'+NOTES.length+' · '+NOTES[i][0]);
+}
+// freeze the game and show the paper screen (a story note, or the door code)
+function showPaperScreen(head){
   paused = true;
   for(const k in keys) keys[k] = false;
   releaseJoy();
   if(isLocked()) document.exitPointerLock();
   lockhint.classList.add('hidden');
-  document.getElementById('noteNum').textContent = 'Poznámka '+(i+1)+'/'+NOTES.length+' · '+NOTES[i][0];
-  document.getElementById('noteText').textContent = NOTES[i][1];
-  document.getElementById('noteSecret').classList.toggle('hidden', i !== NOTES.length-1);
+  document.getElementById('noteNum').textContent = head;
   noteScreen.classList.remove('hidden');
   const paper = actx && pickSound('paper');
   if(paper) playBuffer(paper, masterGain, 0.8, 1); else pickupChime([392, 330]);
@@ -2759,6 +2846,208 @@ function updateNotesLabels(){
   document.querySelectorAll('.notesLbl').forEach(el=> el.textContent = notesLabel());
 }
 updateNotesLabels();
+
+/* ================= FLOOR GOALS: WALL BUTTONS & DOOR CODE ================= */
+// Floor 1 only wants the tokens. From floor 2 three big arcade buttons on random
+// walls must be pressed as well, and from floor 3 the exit keypad also wants a
+// four-digit code scribbled on a paper lying somewhere on the floor.
+const BUTTON_COUNT = 3;
+const btnGeo = {
+  plate: new THREE.BoxGeometry(0.44, 0.44, 0.05),
+  cap: new THREE.CylinderGeometry(0.13, 0.14, 0.09, 20),
+  glow: new THREE.PlaneGeometry(1.2, 1.2)
+};
+const btnPlateMat = new THREE.MeshStandardMaterial({color:0x2a2238, roughness:0.55, metalness:0.5});
+const btnOffMat = new THREE.MeshBasicMaterial({color:0xff2b4a, fog:false});
+const btnOnMat = new THREE.MeshBasicMaterial({color:0x2fff3a, fog:false});
+// a soft glow on the wall around the button instead of a real light (no extra lights to shade)
+const btnGlowTex = makeCanvasTex((g,s)=>{
+  const gr = g.createRadialGradient(s/2,s/2,0, s/2,s/2,s/2);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.3, 'rgba(255,255,255,.4)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0,0,s,s);
+}, 64);
+const paperGeo = new THREE.PlaneGeometry(0.5, 0.36);
+
+function drawCodePaper(code){
+  const c = document.createElement('canvas'); c.width = 160; c.height = 116;
+  const g = c.getContext('2d');
+  g.fillStyle = '#e8dfc4'; g.fillRect(0,0,160,116);
+  g.fillStyle = 'rgba(120,90,40,0.22)'; g.fillRect(0,0,160,8);                  // torn receipt edge
+  g.strokeStyle = 'rgba(60,40,20,0.35)'; g.lineWidth = 1;
+  for(let y=14; y<30; y+=6){ g.beginPath(); g.moveTo(12,y); g.lineTo(148,y); g.stroke(); } // faded print
+  g.fillStyle = '#1a1440'; g.font = 'bold 46px "VT323", monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(code.split('').join(' '), 80, 72);
+  return new THREE.CanvasTexture(c);
+}
+
+function buildFloorGoals(){
+  for(const b of wallButtons){ scene.remove(b.group); b.glow.material.dispose(); }
+  wallButtons = [];
+  if(codePaper){ scene.remove(codePaper.mesh); codePaper.mesh.material.map.dispose(); codePaper.mesh.material.dispose(); codePaper = null; }
+  buttonsPressed = 0; codeFound = false; doorCode = ''; kpRearmAt = 0;
+  const avoid = new Set(cabinetCells);
+  for(const p of tokens) avoid.add(p.r*COLS+p.c);
+  for(const n of notes) avoid.add(n.r*COLS+n.c);
+
+  if(level >= 2){
+    // buttons need a wall to sit on, spread out across the floor
+    const onWall = new Set(avoid);
+    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++) if(!wallSides(r,c).length) onWall.add(r*COLS+c);
+    let cells = pickItemCells(BUTTON_COUNT, 6, 7, onWall, false);
+    if(cells.length < BUTTON_COUNT){
+      for(const [r,c] of cells) onWall.add(r*COLS+c);
+      cells = cells.concat(pickItemCells(BUTTON_COUNT-cells.length, 4, 4, onWall, false));
+    }
+    for(const [r,c] of cells){
+      avoid.add(r*COLS+c);
+      const sides = wallSides(r,c);
+      const spot = wallSpot(r, c, sides[Math.floor(rng()*sides.length)], (rng()-0.5)*1.2, 0);
+      const g = new THREE.Group();
+      g.position.set(spot.x, 1.25, spot.z); g.rotation.y = spot.rot;
+      const plate = new THREE.Mesh(btnGeo.plate, btnPlateMat); plate.position.z = 0.025; g.add(plate);
+      const cap = new THREE.Mesh(btnGeo.cap, btnOffMat); cap.rotation.x = Math.PI/2; cap.position.z = 0.095; g.add(cap);
+      const glow = new THREE.Mesh(btnGeo.glow, new THREE.MeshBasicMaterial({map:btnGlowTex, color:0xff2b4a, transparent:true,
+        opacity:0.6, blending:THREE.AdditiveBlending, depthWrite:false, fog:false}));
+      glow.position.z = 0.06; g.add(glow);
+      scene.add(g);
+      wallButtons.push({group:g, cap, glow, kind:'button', r, c, x:spot.x, z:spot.z, taken:false, seen:false, phase:rng()*6.28});
+    }
+  }
+  buttonsNeeded = wallButtons.length;
+
+  if(level >= 3){
+    doorCode = String(Math.floor(rng()*10000)).padStart(4, '0');
+    const cell = pickItemCells(1, 9, 1, avoid, false)[0] || pickItemCells(1, 3, 1, avoid, false)[0];
+    if(cell){
+      const [r,c] = cell, cen = cellCenter(r,c);
+      const mesh = new THREE.Mesh(paperGeo, new THREE.MeshBasicMaterial({map:drawCodePaper(doorCode), color:0xb8b0a0}));
+      mesh.rotation.x = -Math.PI/2; mesh.rotation.z = rng()*Math.PI*2; // lying flat, at a random angle
+      const x = cen.x + (rng()-0.5)*1.4, z = cen.z + (rng()-0.5)*1.4;
+      mesh.position.set(x, 0.015, z);
+      scene.add(mesh);
+      codePaper = {mesh, kind:'paper', r, c, x, z, taken:false, seen:false};
+    }
+  }
+  codeNeeded = !!codePaper;
+}
+
+function checkWallButtons(){
+  for(const b of wallButtons){
+    if(b.taken || Math.hypot(player.x-b.x, player.z-b.z) > 1.0) continue;
+    b.taken = true;
+    b.cap.material = btnOnMat; b.cap.position.z = 0.07; // pushed in
+    b.glow.material.color.setHex(0x2fff3a);
+    buttonsPressed++;
+    buttonClunk();
+    // the clunk carries down the corridors: a wandering Steve nearby comes to look
+    if(!steve.hunting && Math.hypot(steve.x-player.x, steve.z-player.z) < CELL*5) routeTo(steve, b.r, b.c);
+    progressMade('Tlačítko '+buttonsPressed+'/'+buttonsNeeded, [330, 494]);
+  }
+}
+function buttonClunk(){
+  if(!actx) return;
+  const t = actx.currentTime;
+  const o = actx.createOscillator(); o.type = 'square';
+  o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(42, t+0.14);
+  const f = actx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 900;
+  const g = actx.createGain(); g.gain.setValueAtTime(0.32, t); g.gain.exponentialRampToValueAtTime(0.001, t+0.22);
+  o.connect(f); f.connect(g); g.connect(masterGain); g.connect(reverb);
+  o.start(t); o.stop(t+0.25);
+  // a relay clicking somewhere behind the wall
+  for(let i=0;i<3;i++){
+    const c = actx.createOscillator(); c.type = 'square'; c.frequency.value = 1800 + i*300;
+    const cg = actx.createGain(), at = t + 0.25 + i*0.11;
+    cg.gain.setValueAtTime(0, at); cg.gain.linearRampToValueAtTime(0.05, at+0.004); cg.gain.exponentialRampToValueAtTime(0.0001, at+0.04);
+    c.connect(cg); cg.connect(masterGain); cg.connect(reverb); c.start(at); c.stop(at+0.05);
+  }
+}
+
+function checkCodePaper(){
+  if(!codePaper || codePaper.taken || Math.hypot(player.x-codePaper.x, player.z-codePaper.z) > 0.8) return;
+  codePaper.taken = true; codePaper.mesh.visible = false;
+  codeFound = true;
+  updateObjective();
+  haptic(30);
+  document.getElementById('noteText').innerHTML = 'Někdo to načmáral fixou na útržek účtenky:<div class="codeBig">'
+    + doorCode.split('').join(' ') + '</div>Kód k zámku u východu.' + (difficulty === 'hard' ? ' Zapamatuj si ho.' : '');
+  document.getElementById('noteSecret').classList.add('hidden');
+  showPaperScreen('Zmačkaný papír');
+}
+
+// the exit keypad: the game waits while you type; a wrong code buzzes loud enough for Steve to hear
+const keypadScreen = document.getElementById('keypadscreen');
+const kpDisplay = document.getElementById('kpDisplay');
+let keypadOpen = false, kpEntry = '', kpBusy = false, kpRearmAt = 0;
+function openKeypad(){
+  keypadOpen = true; kpEntry = ''; kpBusy = false;
+  kpRearmAt = Infinity; // closed with "Zpět": it opens again once you step out of the exit or after a moment
+  paused = true;
+  for(const k in keys) keys[k] = false;
+  releaseJoy();
+  if(isLocked()) document.exitPointerLock();
+  lockhint.classList.add('hidden');
+  renderKeypad('');
+  keypadScreen.classList.remove('hidden');
+}
+function closeKeypad(){
+  if(kpBusy) return;
+  keypadOpen = false;
+  keypadScreen.classList.add('hidden');
+  kpRearmAt = performance.now()/1000 + 4;
+  paused = false;
+  requestLook();
+  updateLookHint();
+}
+function renderKeypad(state){
+  kpDisplay.textContent = (kpEntry + '____').slice(0, 4).split('').join(' ');
+  kpDisplay.className = state || '';
+}
+function keypadPress(k){
+  if(!keypadOpen || kpBusy) return;
+  if(k === 'back'){ closeKeypad(); return; }
+  if(k === 'del'){ kpEntry = kpEntry.slice(0, -1); keypadBeep(520); renderKeypad(''); return; }
+  if(kpEntry.length >= 4) return;
+  kpEntry += k;
+  keypadBeep(880 + (+k)*45);
+  renderKeypad('');
+  if(kpEntry.length < 4) return;
+  kpBusy = true;
+  if(kpEntry === doorCode){
+    renderKeypad('ok');
+    pickupChime([523, 659, 784, 1047]);
+    haptic([60,60,120]);
+    setTimeout(()=>{
+      kpBusy = false; keypadOpen = false;
+      keypadScreen.classList.add('hidden');
+      paused = false;
+      endGame(true);
+    }, 700);
+  } else {
+    renderKeypad('bad');
+    keypadBuzz();
+    haptic([120,60,120]);
+    if(steve && !steve.hunting) routeTo(steve, exitCell[0], exitCell[1]);
+    setTimeout(()=>{ kpBusy = false; kpEntry = ''; renderKeypad(''); }, 800);
+  }
+}
+function keypadBeep(freq){
+  if(!actx) return;
+  const t = actx.currentTime, o = actx.createOscillator(), g = actx.createGain();
+  o.type = 'square'; o.frequency.value = freq;
+  g.gain.setValueAtTime(0.05, t); g.gain.exponentialRampToValueAtTime(0.0001, t+0.09);
+  o.connect(g); g.connect(masterGain); o.start(t); o.stop(t+0.1);
+}
+function keypadBuzz(){
+  if(!actx) return;
+  const t = actx.currentTime;
+  for(let i=0;i<2;i++){
+    const o = actx.createOscillator(), g = actx.createGain(), at = t + i*0.24;
+    o.type = 'sawtooth'; o.frequency.value = 110;
+    g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(0.12, at+0.01); g.gain.setValueAtTime(0.12, at+0.17); g.gain.linearRampToValueAtTime(0, at+0.2);
+    o.connect(g); g.connect(masterGain); g.connect(reverb); o.start(at); o.stop(at+0.22);
+  }
+}
+document.querySelectorAll('.kpGrid button').forEach(b=> b.addEventListener('click', ()=> keypadPress(b.dataset.k)));
 
 /* ================= JUMP SCARES ================= */
 // Every 35–75 s (never while Steve is hunting) one of three scares fires:
@@ -3296,7 +3585,7 @@ function pauseGame(){
 }
 function resumeGame(){
   if(!paused) return;
-  if(!noteScreen.classList.contains('hidden')) return; // reading a note — closed with its own button
+  if(!noteScreen.classList.contains('hidden') || keypadOpen) return; // a note or the keypad — closed with its own button
   if(isTouch && H > W) return; // still in portrait — keep the rotate prompt
   paused = false;
   pauseScreen.classList.add('hidden');
@@ -3351,7 +3640,7 @@ function drawMinimap(){
     if(vWalls[r][c+1]){ mctx.moveTo(x+cw,y); mctx.lineTo(x+cw,y+ch); }
   }
   mctx.stroke();
-  mctx.fillStyle = exitLocked ? '#ff2b4a' : '#5adf5a';
+  mctx.fillStyle = exitLocked ? '#ff2b4a' : codeNeeded ? '#ffb02b' : '#5adf5a';
   mctx.fillRect(exitCell[1]*CELL*sx-2, exitCell[0]*CELL*sy-2, 4,4);
   for(const b of batteries){
     if(!b.seen || b.taken) continue;
@@ -3369,6 +3658,25 @@ function drawMinimap(){
     }
     mctx.fillStyle = '#ffd23a'; mctx.strokeStyle = '#ff2bd6'; mctx.lineWidth = 1;
     mctx.beginPath(); mctx.arc(tk.x*sx, tk.z*sy, 3.5, 0, Math.PI*2); mctx.fill(); mctx.stroke();
+  }
+  // wall buttons: red until pressed, then green; the code paper as a small white sheet
+  for(const b of wallButtons){
+    if(!(b.seen || b.taken || showAllTokens)) continue;
+    if(showAllTokens && !b.taken){
+      mctx.strokeStyle = 'rgba(255,43,74,'+(0.35 + 0.5*pulse).toFixed(2)+')'; mctx.lineWidth = 1.5;
+      mctx.beginPath(); mctx.arc(b.x*sx, b.z*sy, 5.5 + 2*pulse, 0, Math.PI*2); mctx.stroke();
+    }
+    mctx.fillStyle = b.taken ? '#2fff3a' : '#ff2b4a';
+    mctx.fillRect(b.x*sx-2.5, b.z*sy-2.5, 5, 5);
+  }
+  if(codePaper && !codePaper.taken && (codePaper.seen || showAllTokens)){
+    const px = codePaper.x*sx, py = codePaper.z*sy;
+    if(showAllTokens){
+      mctx.strokeStyle = 'rgba(232,223,196,'+(0.35 + 0.5*pulse).toFixed(2)+')'; mctx.lineWidth = 1.5;
+      mctx.beginPath(); mctx.arc(px, py, 5.5 + 2*pulse, 0, Math.PI*2); mctx.stroke();
+    }
+    mctx.fillStyle = '#e8dfc4';
+    mctx.fillRect(px-3, py-2, 6, 4);
   }
   mctx.fillStyle = '#e8dcc8';
   mctx.beginPath(); mctx.arc(player.x*sx, player.z*sy, 3,0,Math.PI*2); mctx.fill();
@@ -3417,6 +3725,7 @@ function render(){
     b.spin.rotation.y = b.billboard ? Math.atan2(camera.position.x - b.x, camera.position.z - b.z) : t*1.6 + b.phase;
     b.spin.position.y = b.baseY + Math.sin(t*2.2 + b.phase)*0.06;
   }
+  for(const b of wallButtons) b.glow.material.opacity = b.taken ? 0.3 : 0.45 + 0.3*Math.sin(t*4 + b.phase);
 
   assignFixtureLights(t);
   for(const l of fixtureLights){
