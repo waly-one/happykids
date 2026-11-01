@@ -205,6 +205,7 @@
     transition:all .2s;
   }
   button.playbtn:hover{background:var(--yellow-bright);color:#0b0902;box-shadow:0 0 22px rgba(61,242,255,.6);}
+  button.playbtn:disabled{opacity:.5;cursor:wait;background:transparent;color:var(--yellow-bright);box-shadow:none;}
   .diffbtn,.mousebtn{opacity:.55;}
   .diffbtn.active,.mousebtn.active{opacity:1;background:var(--yellow-bright);color:#0b0902;box-shadow:0 0 18px rgba(61,242,255,.55);}
   .settings{display:flex;flex-direction:column;gap:14px;margin:6px 0 28px;min-width:min(320px,90vw);}
@@ -2351,6 +2352,7 @@ function newGame(floor){
   const intro = level === 2 ? 'Nové: zmáčkni 3 tlačítka na zdech' : level === 3 ? 'Nové: najdi kód na papíře na zemi' : '';
   const introLevel = level;
   if(intro) setTimeout(()=>{ if(running && !gameEnded && level === introLevel && elapsed < 6) showSubtitle(intro, true); }, 1800);
+  warmUpRenderer();
 }
 
 function advanceSteve(dt,t){
@@ -3586,8 +3588,17 @@ document.querySelectorAll('.shareBtn').forEach(b=> b.addEventListener('click', (
 const SPRITE_FILES = ['steve', 'hopsik', 'doll1', 'doll2', 'battery'];
 const spriteTex = {}, spriteInfo = {};
 const texLoader = new THREE.TextureLoader();
+// every image the game loads is counted, so the start button can wait until they're all in:
+// one arriving mid-game swaps a material and stalls a frame (see BOOT)
+let assetsPending = 0, assetsTotal = 0;
+function loadTex(url, onLoad){
+  assetsPending++; assetsTotal++;
+  let done = false;
+  const finish = ()=>{ if(done) return; done = true; assetsPending--; updateStartBtn(); };
+  texLoader.load(url, tex=>{ finish(); onLoad(tex); }, undefined, finish);
+}
 for(const n of SPRITE_FILES){
-  texLoader.load('sprites/'+n+'.png', tex=>{
+  loadTex('sprites/'+n+'.png', tex=>{
     spriteInfo[n] = analyzeSprite(tex.image);
     // crop the texture to the figure itself so its feet sit on the floor
     const b = spriteInfo[n].box;
@@ -3595,7 +3606,7 @@ for(const n of SPRITE_FILES){
     tex.repeat.set(b.r-b.l, b.b-b.t);
     spriteTex[n] = tex;
     onSpriteLoaded(n);
-  }, undefined, ()=>{});
+  });
 }
 // bounding box of the opaque figure, plus where its glowing eyes are (bright yellow pixels near the top)
 function analyzeSprite(img){
@@ -3708,10 +3719,10 @@ const PROP_TURN = 0.87; // how far (radians) a prop card turns from facing strai
 const ART_W = 1.3, ART_H = 0.72, ART_Y = 1.97; // the crayon drawings, between the wall's two neon stripes
 const propTex = {}, propGeos = {}, propMats = {};
 for(const n of Object.keys(PROP_TYPES).concat('drawings')){
-  texLoader.load('props/'+n+'.png', tex=>{
+  loadTex('props/'+n+'.png', tex=>{
     propTex[n] = tex;
     for(const p of props) if(p.type === n) addPropMesh(p);
-  }, undefined, ()=>{});
+  });
 }
 let props = [], decorMeshes = [];
 
@@ -3887,11 +3898,11 @@ function updateSurfaceRepeat(){
   set(ceilMesh, ceilTex, 4.2);
 }
 for(const n of ['wall', 'cabinet', 'token', 'floor', 'ceiling']){
-  texLoader.load('textures/'+n+'.jpg', tex=>{
+  loadTex('textures/'+n+'.jpg', tex=>{
     tex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
     gameTex[n] = tex;
     onTextureLoaded(n);
-  }, undefined, ()=>{});
+  });
 }
 // keep only the bright, saturated pixels (the neon stripes) so just those glow in the dark
 function makeGlowMap(img){
@@ -4081,6 +4092,23 @@ function drawMinimap(){
   mctx.stroke();
 }
 
+// Draw the whole floor once, hidden things and all, the moment it's built: every shader
+// compiles and every texture reaches the GPU now, instead of stalling a frame the first
+// time a prop, the stairs or a scare comes into view. Lights stay as they are, since a
+// different light count would compile a different set of shaders.
+function warmUpRenderer(){
+  const shown = [], unculled = [];
+  scene.traverse(o=>{
+    if(!o.visible && !o.isLight){ o.visible = true; shown.push(o); }
+    if(o.frustumCulled){ o.frustumCulled = false; unculled.push(o); }
+  });
+  renderer.compile(scene, camera);
+  renderer.render(scene, camera);
+  for(const o of shown) o.visible = false;
+  for(const o of unculled) o.frustumCulled = true;
+  render(); // the normal view goes over it before the browser shows anything
+}
+
 function render(){
   if(!player){ renderer.render(scene,camera); return; }
   const t = performance.now()/1000;
@@ -4175,7 +4203,17 @@ function render(){
 }
 
 /* ================= BOOT ================= */
-document.getElementById('startBtn').addEventListener('click', ()=>{
+// the start button waits for the images (at most 10 s, so a slow connection can still play)
+const startBtn = document.getElementById('startBtn');
+const START_LABEL = startBtn.textContent, loadStartT = performance.now();
+function updateStartBtn(){
+  const ready = assetsPending === 0 || performance.now() - loadStartT > 10000;
+  startBtn.disabled = !ready;
+  startBtn.textContent = ready ? START_LABEL : 'Načítám grafiku… '+(assetsTotal-assetsPending)+'/'+assetsTotal;
+}
+updateStartBtn();
+setTimeout(updateStartBtn, 10050);
+startBtn.addEventListener('click', ()=>{
   initAudio();
   if(actx) actx.resume().catch(()=>{});
   document.getElementById('startscreen').classList.add('hidden');
